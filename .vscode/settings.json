@@ -1,0 +1,22 @@
+{
+  // 针对 Python 文件的配置
+  "[python]": {
+    // 设置默认格式化工具为 Black
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    // 保存文件时自动格式化
+    "editor.formatOnSave": true,
+    // 保存时执行代码操作
+    "editor.codeActionsOnSave": {
+      // 自动整理 import 语句（使用 isort 插件）
+      "source.organizeImports": "explicit",
+      // 自动修复所有可修复的问题（使用 Ruff 插件）
+      "source.fixAll": "explicit"
+    }
+  },
+  // 配置 isort 使其兼容 Black 的风格
+  "isort.args": ["--profile", "black"],
+  // 禁用 Ruff 的 import 整理功能，因为上面我们已经用 isort 来做了
+  "ruff.organizeImports": false,
+  // 启用 Ruff
+  "ruff.enable": true
+}
