@@ -29,13 +29,28 @@ class UsersRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_user_by_email(self, session: AsyncSession, email: str) -> Users | None:
+    async def get_user_by_email(
+        self, session: AsyncSession, email: str
+    ) -> Users | None:
         """Find one active user by email."""
 
         result = await session.execute(
             select(Users).where(Users.email == email, Users.is_deleted.is_(False))
         )
         return result.scalar_one_or_none()
+
+    async def create_user(
+        self, session: AsyncSession, data: dict[str, any]
+    ) -> Users | None:
+        # 将字典效验转化为 pydantic 模型
+        db_user = Users.model_validate(
+            data
+        )  # 有验证，中性能，多余字段报错，适用于外部输入要严格效验的
+        # db_user = Users(**data) # 无验证，快性能，多余字段会忽略，适用于内部可靠数据不要验证的
+        session.add(db_user)
+        await session.commit()
+        await session.refresh(db_user)
+        return db_user
 
     def _apply_filters(self, stmt, **filters):
         """Apply common list filters to a statement."""
@@ -85,7 +100,9 @@ class UsersRepository:
     async def count_users(self, session: AsyncSession, **filters: Any) -> int:
         """Count active users that match the filters."""
 
-        stmt = select(func.count()).select_from(Users).where(Users.is_deleted.is_(False))
+        stmt = (
+            select(func.count()).select_from(Users).where(Users.is_deleted.is_(False))
+        )
         stmt = self._apply_filters(stmt, **filters)
         return await session.scalar(stmt) or 0
 
@@ -108,11 +125,6 @@ class UsersRepository:
         """Update user fields by id."""
 
         db_user = await self.get_user_by_id(session, user_id)
-        if not db_user:
-            return None
-
-        if not update_data:
-            return db_user
 
         for key, value in update_data.items():
             setattr(db_user, key, value)

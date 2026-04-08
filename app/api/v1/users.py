@@ -1,9 +1,10 @@
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Body, Depends, Query
+from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.dependencies import SessionDeep
-from app.core.security import get_current_active_user, get_password_hash
+from app.core.security import get_current_active_user
 from app.models.users import (
     PageResult,
     QueryRequest,
@@ -15,6 +16,17 @@ from app.models.users import (
 from app.services.users import users_services
 
 router = APIRouter()
+
+
+@router.post("/login", summary="用户登录")
+async def login(
+    session: SessionDeep,
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+):
+    login_info = await users_services.authenticate_user(
+        session, form_data.username, form_data.password
+    )
+    return login_info
 
 
 @router.get("/getCurrentUser", summary="获取当前登录用户", response_model=UsersReo)
@@ -49,20 +61,12 @@ async def post_users_list(
     return await users_services.get_user_list_service(session, query)
 
 
-@router.post("/postCreateUser", response_model=UsersReo, summary="创建用户")
-async def create_user(session: SessionDeep, user: UsersCreate):
+@router.post("/postCreateUser", response_model=Optional[UsersReo], summary="创建用户")
+async def create_user(session: SessionDeep, data: UsersCreate):
     """创建新用户，并对明文密码进行哈希处理。"""
 
-    db_user = Users(
-        username=user.username,
-        full_name=user.full_name,
-        email=user.email,
-        disabled=user.disabled,
-        hashed_password=get_password_hash(user.password),
-    )
-    session.add(db_user)
-    await session.commit()
-    await session.refresh(db_user)
+    # 必须加 await，不加会把该协程对象当作返回值直接返回了
+    db_user = await users_services.create_user(session, data)
     return db_user
 
 

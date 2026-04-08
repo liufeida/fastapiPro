@@ -71,6 +71,11 @@ class UsersReo(UsersBase):
     id: str
 
 
+class UsersLoginReo(UsersReo):
+    access_token: str
+    token_type: str
+
+
 T = TypeVar("T")
 
 
