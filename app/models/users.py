@@ -14,6 +14,7 @@ class UsersBase(SQLModel):
     username: str
     full_name: str | None = ""
     email: str
+    phone: Optional[str]
     disabled: bool = False
     is_deleted: bool = False
 
@@ -47,10 +48,13 @@ class UsersUpdate(SQLModel):
     username: str | None = None
     full_name: str | None = None
     email: str | None = None
+    phone: str | None = None
     disabled: bool | None = None
     password: str | None = None
 
-    @field_validator("username", "full_name", "email", "password", mode="before")
+    @field_validator(
+        "username", "full_name", "email", "phone", "password", mode="before"
+    )
     @classmethod
     def normalize_update_text(cls, value: str | None) -> str | None:
         """去除首尾空格，并将空字符串视为未传值。"""
@@ -69,6 +73,8 @@ class UsersReo(UsersBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class UsersLoginReo(UsersReo):
@@ -122,12 +128,18 @@ class QueryRequest(PageParams):
         default=None,
         description="按邮箱模糊查询",
     )
+    phone: Optional[str] = PydanticField(
+        default=None,
+        description="按手机号模糊查询",
+    )
     disabled: Optional[bool] = PydanticField(
         default=False,
         description="按禁用状态精确筛选",
     )
 
-    @field_validator("keyword", "username", "full_name", "email", mode="before")
+    @field_validator(
+        "keyword", "username", "full_name", "email", "phone", mode="before"
+    )
     @classmethod
     def normalize_text(cls, value: str | None) -> str | None:
         """去除首尾空格，并将空字符串视为未传值。"""
@@ -151,6 +163,8 @@ class QueryRequest(PageParams):
             filters["full_name_like"] = self.full_name
         if self.email:
             filters["email_like"] = self.email
+        if self.phone:
+            filters["phone_like"] = self.phone
         if self.disabled is not None:
             filters["disabled"] = self.disabled
 
