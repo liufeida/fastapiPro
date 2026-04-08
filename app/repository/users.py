@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import or_
@@ -8,12 +9,12 @@ from app.models.users import Users
 
 
 class UsersRepository:
-    """用户数据访问层。"""
+    """Users data access layer."""
 
     async def get_user_by_username(
         self, session: AsyncSession, username: str
     ) -> Users | None:
-        """根据用户名查询单个用户。"""
+        """Find one active user by username."""
 
         result = await session.execute(
             select(Users).where(Users.username == username, Users.is_deleted.is_(False))
@@ -21,13 +22,23 @@ class UsersRepository:
         return result.scalar_one_or_none()
 
     async def get_user_by_id(self, session: AsyncSession, user_id: str) -> Users | None:
+        """Find one active user by id."""
+
         result = await session.execute(
             select(Users).where(Users.id == user_id, Users.is_deleted.is_(False))
         )
         return result.scalar_one_or_none()
 
+    async def get_user_by_email(self, session: AsyncSession, email: str) -> Users | None:
+        """Find one active user by email."""
+
+        result = await session.execute(
+            select(Users).where(Users.email == email, Users.is_deleted.is_(False))
+        )
+        return result.scalar_one_or_none()
+
     def _apply_filters(self, stmt, **filters):
-        """为查询语句统一追加筛选条件。"""
+        """Apply common list filters to a statement."""
 
         keyword = filters.get("keyword")
         if keyword:
@@ -58,7 +69,7 @@ class UsersRepository:
     async def get_users_by_offset_limit(
         self, session: AsyncSession, offset: int, limit: int, **filters: Any
     ) -> list[Users]:
-        """按条件查询用户分页数据。"""
+        """Query paginated active users."""
 
         stmt = (
             select(Users)
@@ -72,23 +83,46 @@ class UsersRepository:
         return result.scalars().all()
 
     async def count_users(self, session: AsyncSession, **filters: Any) -> int:
-        """统计符合条件的用户总数。"""
+        """Count active users that match the filters."""
 
-        stmt = select(func.count()).select_from(Users)
+        stmt = select(func.count()).select_from(Users).where(Users.is_deleted.is_(False))
         stmt = self._apply_filters(stmt, **filters)
         return await session.scalar(stmt) or 0
 
     async def delete_user_by_id(
         self, session: AsyncSession, user_id: str
     ) -> Users | None:
-        result = await session.execute(
-            select(Users).where(Users.id == user_id, Users.is_deleted.is_(False))
-        )
-        user: Users = result.scalar_one_or_none()
+        """Soft delete a user by id."""
+
+        user = await self.get_user_by_id(session, user_id)
         if user:
             user.is_deleted = True
+            session.add(user)
             await session.commit()
+            await session.refresh(user)
         return user
+
+    async def update_user_infos(
+        self, session: AsyncSession, user_id: str, update_data: dict[str, Any]
+    ) -> Users | None:
+        """Update user fields by id."""
+
+        db_user = await self.get_user_by_id(session, user_id)
+        if not db_user:
+            return None
+
+        if not update_data:
+            return db_user
+
+        for key, value in update_data.items():
+            setattr(db_user, key, value)
+
+        db_user.updated_at = datetime.now(timezone.utc)
+
+        session.add(db_user)
+        await session.commit()
+        await session.refresh(db_user)
+        return db_user
 
 
 users_repository = UsersRepository()

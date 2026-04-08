@@ -16,6 +16,15 @@ class UsersBase(SQLModel):
     email: str
     disabled: bool = False
     is_deleted: bool = False
+
+
+class Users(UsersBase, table=True):
+    """用户表模型。"""
+
+    id: Optional[str] = Field(
+        default_factory=lambda: uuid.uuid4().hex, primary_key=True
+    )
+    hashed_password: str
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True)),
         default_factory=lambda: datetime.now(timezone.utc),
@@ -26,19 +35,32 @@ class UsersBase(SQLModel):
     )
 
 
-class Users(UsersBase, table=True):
-    """用户表模型。"""
-
-    id: Optional[str] = Field(
-        default_factory=lambda: uuid.uuid4().hex, primary_key=True
-    )
-    hashed_password: str
-
-
 class UsersCreate(UsersBase):
     """创建用户时的入参模型。"""
 
     password: str
+
+
+class UsersUpdate(SQLModel):
+    """更新用户时的入参模型，支持局部更新。"""
+
+    username: str | None = None
+    full_name: str | None = None
+    email: str | None = None
+    disabled: bool | None = None
+    password: str | None = None
+
+    @field_validator("username", "full_name", "email", "password", mode="before")
+    @classmethod
+    def normalize_update_text(cls, value: str | None) -> str | None:
+        """去除首尾空格，并将空字符串视为未传值。"""
+
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
 
 
 class UsersReo(UsersBase):
@@ -104,7 +126,6 @@ class QueryRequest(PageParams):
     @classmethod
     def normalize_text(cls, value: str | None) -> str | None:
         """去除首尾空格，并将空字符串视为未传值。"""
-
         if value is None:
             return None
         if isinstance(value, str):
