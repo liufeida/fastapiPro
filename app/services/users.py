@@ -52,8 +52,11 @@ class UsersServices:
         return UsersLoginReo.model_validate(user_dict)
         # return UsersLoginReo(id=user.id, access_token=access_token, token_type="bearer")
 
-    async def get_user_by_id(self, session: AsyncSession, user_id: str):
-        return await users_repository.get_user_by_id(session, user_id)
+    async def get_user_by_id(
+        self, session: AsyncSession, user_id: str
+    ) -> UsersReo | None:
+        db_user = await users_repository.get_user_by_id(session, user_id)
+        return UsersReo.model_validate(db_user)
 
     async def create_user(self, session: AsyncSession, data: UsersCreate) -> UsersReo:
         user_dict = data.model_dump()

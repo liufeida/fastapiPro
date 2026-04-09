@@ -1,7 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
-from app.api.v1 import auth, items, users
-from app.core.security import get_current_user
+from app.api.v1 import auth, files, users
 
 router = APIRouter()
 
@@ -23,10 +22,10 @@ router.include_router(
     **params,
 )
 router.include_router(
-    items.router,
-    prefix="/api/item",
-    tags=["Items"],
-    dependencies=[Depends(get_current_user)],
+    files.router,
+    prefix="/api/files",
+    tags=["Files"],
+    # dependencies=[Depends(get_current_user)],
     responses={404: {"description": "Not found"}},
     **params,
 )

@@ -29,7 +29,9 @@ async def login(
     return login_info
 
 
-@router.get("/getCurrentUser", summary="获取当前登录用户", response_model=UsersReo)
+@router.get(
+    "/getCurrentUser", summary="获取当前登录用户", response_model=Optional[UsersReo]
+)
 async def read_user_me(
     current_user: Annotated[Users, Depends(get_current_active_user)],
 ):
@@ -80,7 +82,7 @@ async def delete_user_by_id(session: SessionDeep, user_id: Annotated[str, Query(
 
 @router.patch(
     "/updateUserInfos",
-    response_model=UsersReo,
+    response_model=Optional[UsersReo],
     summary="根据用户 id 更新用户信息",
 )
 async def update_user_infos(

@@ -70,6 +70,11 @@ class UsersUpdate(SQLModel):
 class UsersReo(UsersBase):
     """用户信息返回模型。"""
 
+    # 允许 Pydantic 从“对象属性”读取数据（而不是只认 dict）
+    # 转换对象 UsersReo.model_validate(db_user)，不加的话，只能 UsersReo.model_validate(dict)
+    # 不加的话，1.参数有SQLModel的默认有，2.response_model=UsersReo的默认有，3.继承的也有
+
+    # SQLModel ≠ 纯 Pydantic，SQLModel 以及继承的，自带
     model_config = ConfigDict(from_attributes=True)
 
     id: str
