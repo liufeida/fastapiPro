@@ -2,12 +2,17 @@ import time
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.core.database import lifespan
 
 from .api.v1 import api
 
 app = FastAPI(lifespan=lifespan)
+
+# 访问静态资源：http://127.0.0.1:8000/uploads/...
+app.mount("/uploads", StaticFiles(directory="uploads"), name="static_files")
+
 app.include_router(api.router)
 
 origins = [

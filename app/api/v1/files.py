@@ -6,7 +6,7 @@ from fastapi import UploadFile
 from fastapi.responses import FileResponse
 
 from app.api.dependencies import SessionDeep
-from app.models.files import FileOut
+from app.models.files import FileOut, PageResult, QueryRequest
 from app.services.files import files_services
 
 router = APIRouter()
@@ -49,3 +49,11 @@ async def upload_files(
     """上传多文件并返回元数据"""
 
     return await files_services.upload_files(session, files)
+
+
+@router.post(
+    "/fileList", response_model=PageResult[FileOut], summary="根据 ids 获取文件分页列表"
+)
+async def file_list(session: SessionDeep, query: QueryRequest):
+
+    return await files_services.file_list(session, query)

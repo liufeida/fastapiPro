@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Annotated
+from typing import Annotated, Any
 
 import jwt
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -20,6 +20,7 @@ SECRET_KEY = "bf2f1100c9c82f053a37d7e1c0ebb8ba67113ed083a2d7d90d282b1907fc66e4"
 ALGORITHM = "HS256"
 # 设置令牌的过期时间
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_DAYS = 7
 
 password_hash = PasswordHash.recommended()
 
@@ -34,6 +35,23 @@ def verify_password(plain_password, hashed_password):
 
 def get_password_hash(password):
     return password_hash.hash(password)
+
+
+def create_token(user: Users) -> dict[str, Any]:
+
+    access_token = create_access_token(
+        data={"sub": user.username},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    refresh_token = create_access_token(
+        data={"sub": user.username},
+        expires_delta=timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS),
+    )
+    user_dict = user.model_dump()
+    user_dict["access_token"] = access_token
+    user_dict["refresh_token"] = refresh_token
+    user_dict["token_type"] = "bearer"
+    return user_dict
 
 
 # 生成新访问令牌的工具函数
@@ -65,6 +83,8 @@ async def get_current_user(
             raise credentials_exception
         token_data = TokenData(username=username)
     except InvalidTokenError:
+        raise credentials_exception
+    except jwt.ExpiredSignatureError:
         raise credentials_exception
     user = await users_repository.get_user_by_username(session, token_data.username)
     if user is None:

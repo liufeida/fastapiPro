@@ -1,5 +1,6 @@
 import re
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 import aiofiles
@@ -7,14 +8,14 @@ from fastapi import HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.files import File, FileCreate, FileOut
+from app.models.files import File, FileCreate, FileOut, PageResult, QueryRequest
 from app.repository.files import files_repository
 
 
 class FilesServices:
     """文件上传业务逻辑."""
 
-    _UPLOAD_DIR = Path("uploads")
+    _UPLOAD_DIR = Path(f"uploads/{datetime.now().strftime('%Y%m%d')}")
     _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     _CHUNK_SIZE = 1024 * 1024
 
@@ -168,6 +169,27 @@ class FilesServices:
             ) from exc
 
         return [FileOut.model_validate(db_file) for db_file in db_files]
+
+    async def file_list(
+        self, session: AsyncSession, query: QueryRequest
+    ) -> PageResult[FileOut]:
+        file_list = await files_repository.file_list(
+            session,
+            offset=query.offset,
+            limit=query.limit,
+            ids=query.ids,
+        )
+
+        total = len(file_list)
+        pages = (total + query.pageSize - 1) // query.pageSize if total > 0 else 0
+
+        return PageResult(
+            data=[FileOut.model_validate(user) for user in file_list],
+            total=total,
+            page=query.page,
+            pageSize=query.pageSize,
+            pages=pages,
+        )
 
 
 files_services = FilesServices()

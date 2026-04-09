@@ -4,10 +4,14 @@ from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
 from alembic import context
+from app.models.files import File
 from app.models.users import Users
 
 
-class Test(Users): ...
+class Test1(Users): ...
+
+
+class Test2(File): ...
 
 
 # this is the Alembic Config object, which provides

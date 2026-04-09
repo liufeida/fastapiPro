@@ -36,5 +36,15 @@ class FilesRepository:
 
         return db_files
 
+    async def file_list(
+        self, session: AsyncSession, offset: int, limit: int, ids: list[str]
+    ) -> list[File]:
+        if not ids:
+            return []
+        stmt = await session.execute(
+            select(File).where(File.id.in_(ids)).offset(offset).limit(limit)
+        )
+        return stmt.scalars().all()
+
 
 files_repository = FilesRepository()

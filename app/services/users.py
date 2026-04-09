@@ -1,11 +1,9 @@
-from datetime import timedelta
-
 from fastapi import HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.security import (
-    ACCESS_TOKEN_EXPIRE_MINUTES,
-    create_access_token,
+    create_token,
+    get_current_user,
     get_password_hash,
     verify_password,
 )
@@ -25,7 +23,7 @@ class UsersServices:
 
     async def authenticate_user(
         self, session: AsyncSession, username: str, password: str
-    ):
+    ) -> UsersLoginReo | None:
         """校验用户名与密码是否匹配。"""
 
         user = await users_repository.get_user_by_username(session, username)
@@ -41,16 +39,14 @@ class UsersServices:
                 detail="账号或密码有误",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
-            data={"sub": user.username},
-            expires_delta=access_token_expires,
-        )
-        user_dict = user.model_dump()
-        user_dict["access_token"] = access_token
-        user_dict["token_type"] = "bearer"
-        return UsersLoginReo.model_validate(user_dict)
+        return UsersLoginReo.model_validate(create_token(user))
         # return UsersLoginReo(id=user.id, access_token=access_token, token_type="bearer")
+
+    async def refresh(
+        self, session: AsyncSession, refresh_token: str
+    ) -> UsersLoginReo | None:
+        user = await get_current_user(session=session, token=refresh_token)
+        return UsersLoginReo.model_validate(create_token(user))
 
     async def get_user_by_id(
         self, session: AsyncSession, user_id: str

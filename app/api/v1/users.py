@@ -10,6 +10,7 @@ from app.models.users import (
     QueryRequest,
     Users,
     UsersCreate,
+    UsersLoginReo,
     UsersReo,
     UsersUpdate,
 )
@@ -18,7 +19,7 @@ from app.services.users import users_services
 router = APIRouter()
 
 
-@router.post("/login", summary="用户登录")
+@router.post("/login", response_model=Optional[UsersLoginReo], summary="用户登录")
 async def login(
     session: SessionDeep,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -27,6 +28,17 @@ async def login(
         session, form_data.username, form_data.password
     )
     return login_info
+
+
+@router.post(
+    "/refresh", response_model=Optional[UsersLoginReo], summary="刷新获取 access_token"
+)
+async def refresh(
+    session: SessionDeep,
+    refresh_token: str,
+):
+
+    return await users_services.refresh(session, refresh_token)
 
 
 @router.get(

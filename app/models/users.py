@@ -17,11 +17,13 @@ class UsersBase(SQLModel):
     phone: Optional[str]
     disabled: bool = False
     is_deleted: bool = False
+    avatar_id: str | None = Field(default=None, foreign_key="file.id")
 
 
 class Users(UsersBase, table=True):
     """用户表模型。"""
 
+    __tablename__ = "users"
     id: Optional[str] = Field(
         default_factory=lambda: uuid.uuid4().hex, primary_key=True
     )
@@ -51,6 +53,7 @@ class UsersUpdate(SQLModel):
     phone: str | None = None
     disabled: bool | None = None
     password: str | None = None
+    avatar_id: str | None = None
 
     @field_validator(
         "username", "full_name", "email", "phone", "password", mode="before"
@@ -77,13 +80,14 @@ class UsersReo(UsersBase):
     # SQLModel ≠ 纯 Pydantic，SQLModel 以及继承的，自带
     model_config = ConfigDict(from_attributes=True)
 
-    id: str
-    created_at: datetime
-    updated_at: datetime
+    id: str | None
+    created_at: datetime | None
+    updated_at: datetime | None
 
 
 class UsersLoginReo(UsersReo):
     access_token: str
+    refresh_token: str
     token_type: str
 
 
