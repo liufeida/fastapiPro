@@ -1,4 +1,5 @@
 # 用于令牌端点响应的 Pydantic 模型
+
 from pydantic import BaseModel
 
 

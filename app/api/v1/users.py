@@ -14,12 +14,14 @@ from app.models.users import (
     UsersReo,
     UsersUpdate,
 )
+from app.schemas.index import ResponseModel
 from app.services.users import users_services
+from app.utils.tools import Execute
 
 router = APIRouter()
 
 
-@router.post("/login", response_model=Optional[UsersLoginReo], summary="用户登录")
+@router.post("/login", response_model=ResponseModel[UsersLoginReo], summary="用户登录")
 async def login(
     session: SessionDeep,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -27,7 +29,7 @@ async def login(
     login_info = await users_services.authenticate_user(
         session, form_data.username, form_data.password
     )
-    return login_info
+    return Execute.response(login_info)
 
 
 @router.post(
@@ -42,28 +44,31 @@ async def refresh(
 
 
 @router.get(
-    "/getCurrentUser", summary="获取当前登录用户", response_model=Optional[UsersReo]
+    "/getCurrentUser",
+    summary="获取当前登录用户",
+    response_model=ResponseModel[UsersReo],
 )
 async def read_user_me(
     current_user: Annotated[Users, Depends(get_current_active_user)],
 ):
     """返回当前登录用户信息。"""
 
-    return current_user
+    return Execute.response(current_user)
 
 
 @router.get(
     "/getUserById",
-    response_model=Optional[UsersReo],
+    response_model=ResponseModel[UsersReo],
     summary="根据用户 id 获取用户信息",
 )
 async def get_user_by_id(session: SessionDeep, user_id: Annotated[str, Query()]):
-    return await users_services.get_user_by_id(session, user_id)
+    data = await users_services.get_user_by_id(session, user_id)
+    return Execute.response(data)
 
 
 @router.post(
     "/postUsersList",
-    response_model=PageResult[UsersReo],
+    response_model=ResponseModel[PageResult[UsersReo]],
     summary="用户分页列表",
 )
 async def post_users_list(
@@ -72,29 +77,34 @@ async def post_users_list(
 ):
     """查询用户分页列表，支持分页、关键字模糊搜索和状态筛选。"""
 
-    return await users_services.get_user_list_service(session, query)
+    data = await users_services.get_user_list_service(session, query)
+    return Execute.response(data)
 
 
-@router.post("/postCreateUser", response_model=Optional[UsersReo], summary="创建用户")
+@router.post(
+    "/postCreateUser", response_model=ResponseModel[UsersReo], summary="创建用户"
+)
 async def create_user(session: SessionDeep, data: UsersCreate):
     """创建新用户，并对明文密码进行哈希处理。"""
 
     # 必须加 await，不加会把该协程对象当作返回值直接返回了
-    db_user = await users_services.create_user(session, data)
-    return db_user
+    data = await users_services.create_user(session, data)
+    return Execute.response(data)
 
 
 @router.delete(
-    "/deleteUserById", response_model=Optional[UsersReo], summary="根据用户 id 删除用户"
+    "/deleteUserById",
+    response_model=ResponseModel[UsersReo],
+    summary="根据用户 id 删除用户",
 )
 async def delete_user_by_id(session: SessionDeep, user_id: Annotated[str, Query()]):
-    user = await users_services.delete_user_by_id(session, user_id)
-    return user
+    data = await users_services.delete_user_by_id(session, user_id)
+    return Execute.response(data)
 
 
 @router.patch(
     "/updateUserInfos",
-    response_model=Optional[UsersReo],
+    response_model=ResponseModel[UsersReo],
     summary="根据用户 id 更新用户信息",
 )
 async def update_user_infos(
@@ -104,4 +114,5 @@ async def update_user_infos(
 ):
     """按用户 ID 更新资料，支持局部更新和密码修改。"""
 
-    return await users_services.update_user_infos(session, user_id, data)
+    data = await users_services.update_user_infos(session, user_id, data)
+    return Execute.response(data)

@@ -15,8 +15,11 @@ from app.repository.files import files_repository
 class FilesServices:
     """文件上传业务逻辑."""
 
-    _UPLOAD_DIR = Path(f"uploads/{datetime.now().strftime('%Y%m%d')}")
-    _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    # 上传带今日日期相对路径，_UPLOAD_DIR_UPLOAD.resolve() 会处理为绝对路径
+    _UPLOAD_DIR_UPLOAD = Path(f"uploads/{datetime.now().strftime('%Y%m%d')}")
+    # 读取源相对路径，被Path处理完为相对，uploads， / 被去掉了其实
+    _UPLOAD_DIR_ORIGIN_READ = Path("uploads/")
+    _UPLOAD_DIR_UPLOAD.mkdir(parents=True, exist_ok=True)
     _CHUNK_SIZE = 1024 * 1024
 
     def _build_storage_name(self, original_filename: str) -> str:
@@ -38,7 +41,7 @@ class FilesServices:
         """将一个上传的文件保存到磁盘，并返回其路径和大小."""
 
         stored_name = self._build_storage_name(upload_file.filename or "")
-        target_path = self._UPLOAD_DIR / stored_name
+        target_path = self._UPLOAD_DIR_UPLOAD / stored_name
         file_size = 0
 
         try:
@@ -89,7 +92,14 @@ class FilesServices:
                 detail="File not found.",
             )
 
-        upload_root = self._UPLOAD_DIR.resolve()
+        upload_root = (
+            self._UPLOAD_DIR_ORIGIN_READ / db_file.created_at.strftime("%Y%m%d")
+        ).resolve()
+
+        # uploads---D:\project\fastapi-demo\uploads
+        # print(
+        #     f"{self._UPLOAD_DIR_ORIGIN_READ}---{self._UPLOAD_DIR_ORIGIN_READ.resolve()}"
+        # )
         file_path = Path(db_file.file_path).resolve()
 
         try:

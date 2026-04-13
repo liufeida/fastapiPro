@@ -43,6 +43,13 @@ class UsersCreate(UsersBase):
 
     password: str
 
+    @field_validator("avatar_id", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v):
+        if v == "":
+            return None
+        return v
+
 
 class UsersUpdate(SQLModel):
     """更新用户时的入参模型，支持局部更新。"""

@@ -1,11 +1,27 @@
 import asyncio
-from typing import AsyncIterable
+from typing import Annotated, AsyncIterable
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel
 
+from app.api.dependencies import SessionDeep
+from app.models.users import UsersLoginReo
+from app.services.users import users_services
+
 router = APIRouter()
+
+
+@router.post("/login", response_model=UsersLoginReo, summary="用户登录")
+async def login(
+    session: SessionDeep,
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+):
+    login_info = await users_services.authenticate_user(
+        session, form_data.username, form_data.password
+    )
+    return login_info
 
 
 class Item(BaseModel):

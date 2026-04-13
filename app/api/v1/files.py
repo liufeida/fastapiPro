@@ -7,7 +7,9 @@ from fastapi.responses import FileResponse
 
 from app.api.dependencies import SessionDeep
 from app.models.files import FileOut, PageResult, QueryRequest
+from app.schemas.index import ResponseModel
 from app.services.files import files_services
+from app.utils.tools import Execute
 
 router = APIRouter()
 
@@ -28,17 +30,20 @@ async def download_file(session: SessionDeep, file_id: str):
     return await files_services.download_file(session, file_id)
 
 
-@router.post("/uploadfile", response_model=FileOut, summary="单文件上传")
+@router.post("/uploadfile", response_model=ResponseModel[FileOut], summary="单文件上传")
 async def upload_file(
     session: SessionDeep,
     file: Annotated[UploadFile, FastAPIFile(description="单文件")],
 ):
     """上传单文件并返回元数据"""
 
-    return await files_services.upload_file(session, file)
+    data = await files_services.upload_file(session, file)
+    return Execute.response(data)
 
 
-@router.post("/uploadfiles", response_model=list[FileOut], summary="多文件上传")
+@router.post(
+    "/uploadfiles", response_model=ResponseModel[list[FileOut]], summary="多文件上传"
+)
 async def upload_files(
     session: SessionDeep,
     files: Annotated[
@@ -48,12 +53,16 @@ async def upload_files(
 ):
     """上传多文件并返回元数据"""
 
-    return await files_services.upload_files(session, files)
+    data = await files_services.upload_files(session, files)
+    return Execute.response(data)
 
 
 @router.post(
-    "/fileList", response_model=PageResult[FileOut], summary="根据 ids 获取文件分页列表"
+    "/fileList",
+    response_model=ResponseModel[PageResult[FileOut]],
+    summary="根据 ids 获取文件分页列表",
 )
 async def file_list(session: SessionDeep, query: QueryRequest):
 
-    return await files_services.file_list(session, query)
+    data = await files_services.file_list(session, query)
+    return Execute.response(data)
