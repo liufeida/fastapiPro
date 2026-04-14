@@ -2,12 +2,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
 import jwt
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
 
 from app.api.dependencies import SessionDeep
+from app.core.exceptions import BusinessException
 from app.models.users import Users
 from app.repository.users import users_repository
 from app.schemas.users import TokenData
@@ -71,24 +72,23 @@ async def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
     session: SessionDeep,
 ):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
         if username is None:
-            raise credentials_exception
+            raise BusinessException(
+                code=status.HTTP_401_UNAUTHORIZED, message="无法验证凭据"
+            )
         token_data = TokenData(username=username)
     except InvalidTokenError:
-        raise credentials_exception
+        raise BusinessException(code=status.HTTP_401_UNAUTHORIZED, message="令牌无效!")
     except jwt.ExpiredSignatureError:
-        raise credentials_exception
+        raise BusinessException(code=status.HTTP_401_UNAUTHORIZED, message="令牌已过期")
     user = await users_repository.get_user_by_username(session, token_data.username)
     if user is None:
-        raise credentials_exception
+        raise BusinessException(
+            code=status.HTTP_401_UNAUTHORIZED, message="无法验证凭据"
+        )
     return user
 
 
@@ -96,5 +96,5 @@ async def get_current_active_user(
     current_user: Annotated[Users, Depends(get_current_user)],
 ):
     if current_user.disabled:
-        raise HTTPException(status_code=400, detail="Inactive user")
+        raise BusinessException(code=status.HTTP_400_BAD_REQUEST, message="用户未激活")
     return current_user

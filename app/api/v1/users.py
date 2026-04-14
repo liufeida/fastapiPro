@@ -1,9 +1,10 @@
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Query
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.dependencies import SessionDeep
+from app.core.exceptions import Execute
 from app.core.security import get_current_active_user
 from app.models.users import (
     PageResult,
@@ -14,9 +15,8 @@ from app.models.users import (
     UsersReo,
     UsersUpdate,
 )
-from app.schemas.index import ResponseModel
+from app.schemas.exceptions import ResponseModel
 from app.services.users import users_services
-from app.utils.tools import Execute
 
 router = APIRouter()
 
@@ -33,14 +33,16 @@ async def login(
 
 
 @router.post(
-    "/refresh", response_model=Optional[UsersLoginReo], summary="刷新获取 access_token"
+    "/refresh",
+    response_model=ResponseModel[UsersLoginReo],
+    summary="刷新获取 access_token",
 )
 async def refresh(
     session: SessionDeep,
     refresh_token: str,
 ):
-
-    return await users_services.refresh(session, refresh_token)
+    data = await users_services.refresh(session, refresh_token)
+    return Execute.response(data)
 
 
 @router.get(
@@ -49,11 +51,11 @@ async def refresh(
     response_model=ResponseModel[UsersReo],
 )
 async def read_user_me(
-    current_user: Annotated[Users, Depends(get_current_active_user)],
+    data: Annotated[Users, Depends(get_current_active_user)],
 ):
     """返回当前登录用户信息。"""
 
-    return Execute.response(current_user)
+    return Execute.response(data)
 
 
 @router.get(

@@ -1,6 +1,7 @@
 from fastapi import HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.exceptions import BusinessException
 from app.core.security import (
     create_token,
     get_current_user,
@@ -28,19 +29,14 @@ class UsersServices:
 
         user = await users_repository.get_user_by_username(session, username)
         if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
+            raise BusinessException(
+                code=status.HTTP_400_BAD_REQUEST, message="账号或密码有误!!"
             )
         if not verify_password(password, user.hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="账号或密码有误",
-                headers={"WWW-Authenticate": "Bearer"},
+            raise BusinessException(
+                code=status.HTTP_400_BAD_REQUEST, message="账号或密码有误!!"
             )
         return UsersLoginReo.model_validate(create_token(user))
-        # return UsersLoginReo(id=user.id, access_token=access_token, token_type="bearer")
 
     async def refresh(
         self, session: AsyncSession, refresh_token: str
