@@ -1,7 +1,6 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Query
-from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.dependencies import SessionDeep
 from app.core.exceptions import Execute
@@ -19,17 +18,6 @@ from app.schemas.exceptions import ResponseModel
 from app.services.users import users_services
 
 router = APIRouter()
-
-
-@router.post("/login", response_model=ResponseModel[UsersLoginReo], summary="用户登录")
-async def login(
-    session: SessionDeep,
-    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-):
-    login_info = await users_services.authenticate_user(
-        session, form_data.username, form_data.password
-    )
-    return Execute.response(login_info)
 
 
 @router.post(
