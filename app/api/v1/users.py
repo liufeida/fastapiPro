@@ -24,6 +24,7 @@ router = APIRouter()
     "/refresh",
     response_model=ResponseModel[UsersLoginReo],
     summary="刷新获取 access_token",
+    operation_id="refresh",
 )
 async def refresh(
     session: SessionDeep,
@@ -37,6 +38,7 @@ async def refresh(
     "/getCurrentUser",
     summary="获取当前登录用户",
     response_model=ResponseModel[UsersReo],
+    operation_id="getCurrentUser",
 )
 async def read_user_me(
     data: Annotated[Users, Depends(get_current_active_user)],
@@ -50,6 +52,7 @@ async def read_user_me(
     "/getUserById",
     response_model=ResponseModel[UsersReo],
     summary="根据用户 id 获取用户信息",
+    operation_id="getUserById",
 )
 async def get_user_by_id(session: SessionDeep, user_id: Annotated[str, Query()]):
     data = await users_services.get_user_by_id(session, user_id)
@@ -60,6 +63,7 @@ async def get_user_by_id(session: SessionDeep, user_id: Annotated[str, Query()])
     "/postUsersList",
     response_model=ResponseModel[PageResult[UsersReo]],
     summary="用户分页列表",
+    operation_id="postUsersList",
 )
 async def post_users_list(
     session: SessionDeep,
@@ -72,7 +76,10 @@ async def post_users_list(
 
 
 @router.post(
-    "/postCreateUser", response_model=ResponseModel[UsersReo], summary="创建用户"
+    "/postCreateUser",
+    response_model=ResponseModel[UsersReo],
+    summary="创建用户",
+    operation_id="postCreateUser",
 )
 async def create_user(session: SessionDeep, data: UsersCreate):
     """创建新用户，并对明文密码进行哈希处理。"""
@@ -86,6 +93,7 @@ async def create_user(session: SessionDeep, data: UsersCreate):
     "/deleteUserById",
     response_model=ResponseModel[UsersReo],
     summary="根据用户 id 删除用户",
+    operation_id="deleteUserById",
 )
 async def delete_user_by_id(session: SessionDeep, user_id: Annotated[str, Query()]):
     data = await users_services.delete_user_by_id(session, user_id)
@@ -96,6 +104,7 @@ async def delete_user_by_id(session: SessionDeep, user_id: Annotated[str, Query(
     "/updateUserInfos",
     response_model=ResponseModel[UsersReo],
     summary="根据用户 id 更新用户信息",
+    operation_id="updateUserInfos",
 )
 async def update_user_infos(
     session: SessionDeep,

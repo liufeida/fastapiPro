@@ -8,7 +8,13 @@ from app.core.middleware import register_middleware_handles
 
 from .api.v1 import api
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    root_path="/api",
+    # servers=["http://http://127.0.0.1:8000/"],
+    # docs_url="/api/docs",
+    # openapi_url="/api/openapi.json",
+)
 
 register_exception_handlers(app)
 register_middleware_handles(app)
@@ -23,6 +29,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost",
         "http://localhost:9527",
+        "http://localhost:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],

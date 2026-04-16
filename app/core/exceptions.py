@@ -108,7 +108,7 @@ def register_exception_handlers(app: FastAPI):
 
         return JSONResponse(
             status_code=500,
-            content=ErrorResponseModel(code=500, message="数据库错误"),
+            content=ErrorResponseModel(code=500, message="数据库错误").model_dump(),
         )
 
     # 捕获所有未处理异常（兜底）
@@ -117,5 +117,5 @@ def register_exception_handlers(app: FastAPI):
         # 记录日志
         return JSONResponse(
             status_code=500,
-            content=ErrorResponseModel(code=500, message="服务器内部错误"),
+            content=ErrorResponseModel(code=500, message="服务器内部错误").model_dump(),
         )

@@ -14,7 +14,12 @@ from app.services.files import files_services
 router = APIRouter()
 
 
-@router.get("/preview/{file_id}", response_class=FileResponse, summary="预览文件")
+@router.get(
+    "/preview/{file_id}",
+    response_class=FileResponse,
+    summary="预览文件",
+    operation_id="previewFile",
+)
 async def preview_file(session: SessionDeep, file_id: str):
     """预览文件"""
 
@@ -22,7 +27,10 @@ async def preview_file(session: SessionDeep, file_id: str):
 
 
 @router.get(
-    "/download/{file_id}", response_class=FileResponse, summary="根据 fileId 下载单文件"
+    "/download/{file_id}",
+    response_class=FileResponse,
+    summary="根据 fileId 下载单文件",
+    operation_id="downloadFile",
 )
 async def download_file(session: SessionDeep, file_id: str):
     """下载单文件"""
@@ -30,7 +38,12 @@ async def download_file(session: SessionDeep, file_id: str):
     return await files_services.download_file(session, file_id)
 
 
-@router.post("/uploadfile", response_model=ResponseModel[FileOut], summary="单文件上传")
+@router.post(
+    "/uploadfile",
+    response_model=ResponseModel[FileOut],
+    summary="单文件上传",
+    operation_id="uploadFile",
+)
 async def upload_file(
     session: SessionDeep,
     file: Annotated[UploadFile, FastAPIFile(description="单文件")],
@@ -42,7 +55,10 @@ async def upload_file(
 
 
 @router.post(
-    "/uploadfiles", response_model=ResponseModel[list[FileOut]], summary="多文件上传"
+    "/uploadfiles",
+    response_model=ResponseModel[list[FileOut]],
+    summary="多文件上传",
+    operation_id="uploadFiles",
 )
 async def upload_files(
     session: SessionDeep,
@@ -61,6 +77,7 @@ async def upload_files(
     "/fileList",
     response_model=ResponseModel[PageResult[FileOut]],
     summary="根据 ids 获取文件分页列表",
+    operation_id="fileList",
 )
 async def file_list(session: SessionDeep, query: QueryRequest):
 
