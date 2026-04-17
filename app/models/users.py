@@ -190,7 +190,7 @@ class QueryRequest(PageParams):
 class PageResult(BaseModel, Generic[T]):
     """通用分页返回结构。"""
 
-    data: List[T]
+    records: List[T]
     total: int
     page: int
     pageSize: int

@@ -73,6 +73,19 @@ async def upload_files(
     return Execute.response(data)
 
 
+@router.get(
+    "/getFileById",
+    response_model=ResponseModel[FileOut],
+    summary="根据 id 查找文件",
+    operation_id="getFileById",
+)
+async def getFileById(session: SessionDeep, file_id: str):
+    """根据 id 查找一个文件元数据记录"""
+
+    data = await files_services.get_file_by_id(session, file_id)
+    return Execute.response(data)
+
+
 @router.post(
     "/fileList",
     response_model=ResponseModel[PageResult[FileOut]],

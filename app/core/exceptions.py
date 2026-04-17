@@ -49,7 +49,7 @@ def register_exception_handlers(app: FastAPI):
     async def business_exception_handler(request, exc: BusinessException):
         return JSONResponse(
             # 业务异常通常仍返回 200，通过 code 区分
-            status_code=200,
+            status_code=exc.code if exc.code >= 400 else 200,
             content=ErrorResponseModel(
                 code=exc.code, message=exc.message, detail=exc.detail
             ).model_dump(),

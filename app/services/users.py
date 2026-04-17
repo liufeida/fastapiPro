@@ -85,7 +85,7 @@ class UsersServices:
         pages = (total + query.pageSize - 1) // query.pageSize if total > 0 else 0
 
         return PageResult(
-            data=[UsersReo.model_validate(user) for user in users],
+            records=[UsersReo.model_validate(user) for user in users],
             total=total,
             page=query.page,
             pageSize=query.pageSize,

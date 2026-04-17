@@ -9,6 +9,7 @@ from sqlmodel import Column, DateTime, Field, SQLModel
 class FileBase(SQLModel):
     """文件元数据基类."""
 
+    url: str
     filename: str
     file_path: str
     file_size: int
@@ -78,7 +79,7 @@ T = TypeVar("T")
 class PageResult(SQLModel, Generic[T]):
     """通用分页返回结构。"""
 
-    data: list[T]
+    records: list[T]
     total: int
     page: int
     pageSize: int

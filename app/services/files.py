@@ -58,7 +58,7 @@ class FilesServices:
         finally:
             await upload_file.close()
 
-        return target_path, file_size
+        return target_path.as_posix(), file_size
 
     async def _cleanup_saved_files(self, saved_paths: list[Path]) -> None:
         """如果上传操作失败，删除那些在上传过程中已写入的文件."""
@@ -73,6 +73,7 @@ class FilesServices:
 
         target_path, file_size = await self._save_file_to_disk(upload_file)
         file_record = FileCreate(
+            url="https://fastapi.agentcore.art/api/" + str(target_path),
             filename=Path(upload_file.filename or "").name,
             file_path=str(target_path),
             file_size=file_size,
@@ -180,6 +181,17 @@ class FilesServices:
 
         return [FileOut.model_validate(db_file) for db_file in db_files]
 
+    async def get_file_by_id(self, session: AsyncSession, file_id: str) -> FileOut:
+        """根据 id 查找一个文件元数据记录."""
+
+        db_file = await files_repository.get_file_by_id(session, file_id)
+        if not db_file:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found.",
+            )
+        return FileOut.model_validate(db_file)
+
     async def file_list(
         self, session: AsyncSession, query: QueryRequest
     ) -> PageResult[FileOut]:
@@ -194,7 +206,7 @@ class FilesServices:
         pages = (total + query.pageSize - 1) // query.pageSize if total > 0 else 0
 
         return PageResult(
-            data=[FileOut.model_validate(user) for user in file_list],
+            records=[FileOut.model_validate(user) for user in file_list],
             total=total,
             page=query.page,
             pageSize=query.pageSize,
