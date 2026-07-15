@@ -30,6 +30,7 @@ app.add_middleware(
         "http://localhost",
         "http://localhost:9527",
         "http://localhost:3000",
+        "https://web.agentcore.art",
     ],
     allow_credentials=True,
     allow_methods=["*"],

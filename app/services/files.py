@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import aiofiles
@@ -15,12 +15,15 @@ from app.repository.files import files_repository
 class FilesServices:
     """文件上传业务逻辑."""
 
-    # 上传带今日日期相对路径，_UPLOAD_DIR_UPLOAD.resolve() 会处理为绝对路径
-    _UPLOAD_DIR_UPLOAD = Path(f"uploads/{datetime.now().strftime('%Y%m%d')}")
-    # 读取源相对路径，被Path处理完为相对，uploads， / 被去掉了其实
+    # 读取源相对路径
     _UPLOAD_DIR_ORIGIN_READ = Path("uploads/")
-    _UPLOAD_DIR_UPLOAD.mkdir(parents=True, exist_ok=True)
     _CHUNK_SIZE = 1024 * 1024
+
+    @property
+    def _upload_dir_upload(self) -> Path:
+        """动态获取今日日期上传目录."""
+        today = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d")
+        return Path(f"uploads/{today}")
 
     def _build_storage_name(self, original_filename: str) -> str:
         """为本地存储创建一个安全且独特的文件名."""
@@ -34,14 +37,17 @@ class FilesServices:
 
         suffix = Path(clean_name).suffix.lower()
         stem = Path(clean_name).stem or "file"
-        safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._") or "file"
-        return f"{safe_stem}_{uuid.uuid4().hex}{suffix}"
+        # safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._") or "file"
+        # return f"{safe_stem}_{uuid.uuid4().hex}{suffix}"
+        return f"{uuid.uuid4().hex}{suffix}"
 
     async def _save_file_to_disk(self, upload_file: UploadFile) -> tuple[Path, int]:
         """将一个上传的文件保存到磁盘，并返回其路径和大小."""
 
         stored_name = self._build_storage_name(upload_file.filename or "")
-        target_path = self._UPLOAD_DIR_UPLOAD / stored_name
+        target_dir = self._upload_dir_upload
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / stored_name
         file_size = 0
 
         try:

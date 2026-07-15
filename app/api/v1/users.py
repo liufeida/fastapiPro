@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Depends, Query
 
 from app.api.dependencies import SessionDeep
 from app.core.exceptions import Execute
-from app.core.security import get_current_active_user
+from app.core.security import get_current_active_user, get_current_user
 from app.models.users import (
     PageResult,
     QueryRequest,
@@ -28,9 +28,9 @@ router = APIRouter()
 )
 async def refresh(
     session: SessionDeep,
-    refresh_token: str,
+    user: Annotated[Users, Depends(get_current_user)],
 ):
-    data = await users_services.refresh(session, refresh_token)
+    data = await users_services.refresh(session, user)
     return Execute.response(data)
 
 

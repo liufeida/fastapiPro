@@ -89,7 +89,7 @@ class UsersRepository:
         stmt = (
             select(Users)
             .where(Users.is_deleted.is_(False))
-            .order_by(Users.username)
+            .order_by(Users.updated_at.desc())
             .offset(offset)
             .limit(limit)
         )

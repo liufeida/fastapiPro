@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.dependencies import SessionDeep
 from app.core.exceptions import BusinessException
@@ -38,7 +39,7 @@ def get_password_hash(password):
     return password_hash.hash(password)
 
 
-def create_token(user: Users) -> dict[str, Any]:
+async def create_token(user: Users, session: AsyncSession = None) -> dict[str, Any]:
 
     access_token = create_access_token(
         data={"sub": user.username},
@@ -52,6 +53,19 @@ def create_token(user: Users) -> dict[str, Any]:
     user_dict["access_token"] = access_token
     user_dict["refresh_token"] = refresh_token
     user_dict["token_type"] = "bearer"
+
+    # 填充 avatar_url
+    if user.avatar_id and session:
+        from app.models.files import File
+        from sqlmodel import select
+
+        result = await session.execute(
+            select(File.url).where(File.id == user.avatar_id)
+        )
+        user_dict["avatar_url"] = result.scalar_one_or_none()
+    else:
+        user_dict["avatar_url"] = None
+
     return user_dict
 
 
@@ -80,10 +94,10 @@ async def get_current_user(
                 code=status.HTTP_401_UNAUTHORIZED, message="无法验证凭据"
             )
         token_data = TokenData(username=username)
-    except InvalidTokenError:
-        raise BusinessException(code=status.HTTP_401_UNAUTHORIZED, message="令牌无效!")
     except jwt.ExpiredSignatureError:
         raise BusinessException(code=status.HTTP_401_UNAUTHORIZED, message="令牌已过期")
+    except InvalidTokenError:
+        raise BusinessException(code=status.HTTP_401_UNAUTHORIZED, message="令牌无效!")
     user = await users_repository.get_user_by_username(session, token_data.username)
     if user is None:
         raise BusinessException(

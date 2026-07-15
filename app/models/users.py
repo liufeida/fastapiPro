@@ -90,6 +90,9 @@ class UsersReo(UsersBase):
     id: str | None
     created_at: datetime | None
     updated_at: datetime | None
+    avatar_url: str | None = None
+    # avatar_id: str | None = PydanticField(None, exclude=True)
+    avatar_id: str | None = PydanticField(None, exclude=False)
 
 
 class UsersLoginReo(UsersReo):
@@ -149,7 +152,7 @@ class QueryRequest(PageParams):
         description="按手机号模糊查询",
     )
     disabled: Optional[bool] = PydanticField(
-        default=False,
+        default=None,
         description="按禁用状态精确筛选",
     )
 

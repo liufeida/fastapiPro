@@ -11,6 +11,7 @@ from app.core.security import (
 from app.models.users import (
     PageResult,
     QueryRequest,
+    Users,
     UsersCreate,
     UsersLoginReo,
     UsersReo,
@@ -36,19 +37,34 @@ class UsersServices:
             raise BusinessException(
                 code=status.HTTP_400_BAD_REQUEST, message="账号或密码有误!!"
             )
-        return UsersLoginReo.model_validate(create_token(user))
+        return UsersLoginReo.model_validate(await create_token(user, session))
 
     async def refresh(
-        self, session: AsyncSession, refresh_token: str
+        self, session: AsyncSession, user: Users
     ) -> UsersLoginReo | None:
-        user = await get_current_user(session=session, token=refresh_token)
-        return UsersLoginReo.model_validate(create_token(user))
+        return UsersLoginReo.model_validate(await create_token(user, session))
 
     async def get_user_by_id(
         self, session: AsyncSession, user_id: str
     ) -> UsersReo | None:
         db_user = await users_repository.get_user_by_id(session, user_id)
-        return UsersReo.model_validate(db_user)
+        if not db_user:
+            return None
+
+        user_dict = db_user.model_dump()
+
+        if db_user.avatar_id:
+            from app.models.files import File
+            from sqlmodel import select
+
+            result = await session.execute(
+                select(File.url).where(File.id == db_user.avatar_id)
+            )
+            user_dict["avatar_url"] = result.scalar_one_or_none()
+        else:
+            user_dict["avatar_url"] = None
+
+        return UsersReo.model_validate(user_dict)
 
     async def create_user(self, session: AsyncSession, data: UsersCreate) -> UsersReo:
         user_dict = data.model_dump()
@@ -84,8 +100,28 @@ class UsersServices:
         total = await users_repository.count_users(session, **filters)
         pages = (total + query.pageSize - 1) // query.pageSize if total > 0 else 0
 
+        # 批量查询头像 URL
+        avatar_ids = [u.avatar_id for u in users if u.avatar_id]
+        avatar_urls = {}
+        if avatar_ids:
+            from app.models.files import File
+            from sqlmodel import select
+
+            result = await session.execute(
+                select(File.id, File.url).where(File.id.in_(avatar_ids))
+            )
+            avatar_urls = {row.id: row.url for row in result.all()}
+
+        # 组装返回数据
+        records = []
+        for user in users:
+            user_dict = user.model_dump()
+            # user_dict.pop("avatar_id", None)  # 移除 avatar_id，不传给前端
+            user_dict["avatar_url"] = avatar_urls.get(user.avatar_id)
+            records.append(UsersReo.model_validate(user_dict))
+
         return PageResult(
-            records=[UsersReo.model_validate(user) for user in users],
+            records=records,
             total=total,
             page=query.page,
             pageSize=query.pageSize,
@@ -113,16 +149,6 @@ class UsersServices:
         update_data = data.model_dump(exclude_unset=True, exclude_none=True)
         if not update_data:
             return UsersReo.model_validate(db_user)
-
-        # email 唯一性效验
-        email = update_data.get("email")
-        if email and email != db_user.email:
-            exists_user = await users_repository.get_user_by_email(session, email)
-            if exists_user:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Email already exists",
-                )
 
         # 哈希密码
         if "password" in update_data:
