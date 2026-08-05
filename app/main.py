@@ -1,3 +1,17 @@
+import logging
+
+from dotenv import load_dotenv
+
+# 加载项目根目录 .env 文件，必须在导入业务模块之前执行
+load_dotenv()
+
+# 配置日志：在导入业务模块之前执行，确保所有 logger 都能输出
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles

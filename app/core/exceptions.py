@@ -72,10 +72,17 @@ def register_exception_handlers(app: FastAPI):
     async def validation_exception_handler(
         request: Request, exc: RequestValidationError
     ):
+        # exc.errors() 可能包含不可 JSON 序列化的对象（如 ValueError），需清洗
+        safe_errors = []
+        for err in exc.errors():
+            safe_err = {k: str(v) if not isinstance(v, (str, int, float, bool, type(None), list, dict)) else v for k, v in err.items()}
+            if "ctx" in safe_err and isinstance(safe_err["ctx"], dict):
+                safe_err["ctx"] = {k: str(v) for v in safe_err["ctx"].values()}
+            safe_errors.append(safe_err)
         return JSONResponse(
             status_code=422,
             content=ErrorResponseModel(
-                code=422, message="请求数据校验失败", detail=exc.errors()
+                code=422, message="请求数据校验失败", detail=safe_errors
             ).model_dump(),
         )
 

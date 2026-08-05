@@ -8,12 +8,17 @@ dependencies = [
     "aiofiles>=25.1.0",
     "alembic>=1.18.4",
     "asyncpg>=0.31.0",
+    "beautifulsoup4>=4.15.0",
     "fastapi[standard]>=0.135.2",
     "httpx>=0.28.1",
+    "langchain-deepseek>=1.1.0",
+    "langchain-openai>=1.4.1",
+    "lxml>=6.1.1",
     "ollama>=0.6.1",
     "psycopg2>=2.9.11",
     "pwdlib[argon2]>=0.3.0",
     "pyjwt>=2.12.1",
+    "python-dotenv>=1.2.2",
     "sqlmodel>=0.0.38",
 ]
 [tool.fastapi]

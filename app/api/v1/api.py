@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.api.v1 import auth, files, ollama, users
+from app.api.v1 import auth, deepseek, files, ollama, users
 from app.core.security import get_current_user
 
 router = APIRouter()
@@ -18,6 +18,14 @@ router.include_router(
     ollama.router,
     prefix="/ollama",
     tags=["Ollama"],
+    # dependencies=[Depends(get_current_user)],
+    responses={404: {"description": "Not found"}},
+    **params,
+)
+router.include_router(
+    deepseek.router,
+    prefix="/deepseek",
+    tags=["DeepSeek"],
     # dependencies=[Depends(get_current_user)],
     responses={404: {"description": "Not found"}},
     **params,
