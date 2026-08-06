@@ -131,9 +131,7 @@ class DeepSeekProvider(AIProvider):
 
         thinking=true 时必须走此方法（LangChain 会清除 reasoning_content 字段）。
         使用 read=None 超时——thinking 模式下 reasoning→content 之间可能有长时间间隔。
-
-        先完整收集所有 chunk（确保 httpx 请求完整结束），再逐个 yield，
-        避免嵌套 async generator 中 httpx 连接被 yield 暂停意外关闭。
+        边收边 yield，上游 chunk 一到立刻向下游推送，消除首包延迟。
         """
         url = (config.base_url or "https://api.deepseek.com").rstrip("/")
         url = f"{url}/chat/completions"
@@ -149,9 +147,9 @@ class DeepSeekProvider(AIProvider):
         if thinking:
             payload["thinking"] = {"type": "enabled"}
 
-        collected: list[StreamChunk] = []
         last_raw_chunk = None
         done_seen = False
+        chunk_count = 0
         try:
             async with httpx.AsyncClient(timeout=_HTTPX_STREAM_TIMEOUT) as client:
                 async with client.stream(
@@ -176,12 +174,12 @@ class DeepSeekProvider(AIProvider):
                         delta = choices[0].get("delta", {})
                         reasoning = delta.get("reasoning_content")
                         if reasoning:
-                            collected.append(
-                                StreamEvent(type="thinking", reasoning=reasoning)
-                            )
+                            chunk_count += 1
+                            yield StreamEvent(type="thinking", reasoning=reasoning)
                         content = delta.get("content")
                         if content is not None:
-                            collected.append(content)
+                            chunk_count += 1
+                            yield content
         except (httpx.HTTPError, httpx.TimeoutException) as exc:
             logger.warning(
                 f"_stream_raw httpx 异常 thinking={thinking}: "
@@ -193,21 +191,18 @@ class DeepSeekProvider(AIProvider):
             if not done_seen:
                 logger.warning(
                     f"_stream_raw 未收到 [DONE] thinking={thinking} "
-                    f"收集 chunks={len(collected)}"
+                    f"已 yield chunks={chunk_count}"
                 )
 
         if last_raw_chunk:
             usage = last_raw_chunk.get("usage", {}) or {}
             if usage:
-                collected.append(StreamEvent(
+                yield StreamEvent(
                     type="usage",
                     prompt_tokens=usage.get("prompt_tokens"),
                     completion_tokens=usage.get("completion_tokens"),
                     total_tokens=usage.get("total_tokens"),
-                ))
-
-        for chunk in collected:
-            yield chunk
+                )
 
     @staticmethod
     def _extract_reasoning(chunk: AIMessage) -> Optional[str]:

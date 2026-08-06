@@ -120,9 +120,7 @@ class QwenProvider(AIProvider):
         self, config, messages, thinking=False
     ) -> AsyncIterator[StreamChunk]:
         """原生 httpx 流式：直接消费 DashScope SSE，提取 reasoning_content。
-
-        先完整收集所有 chunk（确保 httpx 请求完整结束），再逐个 yield，
-        避免嵌套 async generator 中 httpx 连接被 yield 暂停意外关闭。
+        边收边 yield，上游 chunk 一到立刻向下游推送，消除首包延迟。
         """
         url = (
             config.base_url
@@ -141,9 +139,9 @@ class QwenProvider(AIProvider):
         if thinking:
             payload["enable_thinking"] = True
 
-        collected: list[StreamChunk] = []
         last_raw_chunk = None
         done_seen = False
+        chunk_count = 0
         try:
             async with httpx.AsyncClient(timeout=_HTTPX_STREAM_TIMEOUT) as client:
                 async with client.stream(
@@ -168,12 +166,12 @@ class QwenProvider(AIProvider):
                         delta = choices[0].get("delta", {})
                         reasoning = delta.get("reasoning_content")
                         if reasoning:
-                            collected.append(
-                                StreamEvent(type="thinking", reasoning=reasoning)
-                            )
+                            chunk_count += 1
+                            yield StreamEvent(type="thinking", reasoning=reasoning)
                         content = delta.get("content")
                         if content is not None:
-                            collected.append(content)
+                            chunk_count += 1
+                            yield content
         except (httpx.HTTPError, httpx.TimeoutException) as exc:
             logger.warning(f"_stream_raw httpx 异常 thinking={thinking}: {type(exc).__name__}: {exc}")
         except (BrokenPipeError, ConnectionResetError, OSError) as exc:
@@ -182,21 +180,18 @@ class QwenProvider(AIProvider):
             if not done_seen:
                 logger.warning(
                     f"_stream_raw 未收到 [DONE] thinking={thinking} "
-                    f"收集 chunks={len(collected)}"
+                    f"已 yield chunks={chunk_count}"
                 )
 
         if last_raw_chunk:
             usage = last_raw_chunk.get("usage", {}) or {}
             if usage:
-                collected.append(StreamEvent(
+                yield StreamEvent(
                     type="usage",
                     prompt_tokens=usage.get("prompt_tokens"),
                     completion_tokens=usage.get("completion_tokens"),
                     total_tokens=usage.get("total_tokens"),
-                ))
-
-        for chunk in collected:
-            yield chunk
+                )
 
     @staticmethod
     def _extract_reasoning(chunk: AIMessage) -> Optional[str]:
