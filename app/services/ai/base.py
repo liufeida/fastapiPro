@@ -1,28 +1,83 @@
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import Enum
 from typing import AsyncIterator, Optional, Union
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ToolEvent:
-    """工具调用相关事件，供路由层区分 SSE 事件类型。
+class EventType(str, Enum):
+    START = "start"
+    THINKING_START = "thinking_start"
+    THINKING = "thinking"
+    THINKING_END = "thinking_end"
+    CONTENT_START = "content_start"
+    CONTENT = "content"
+    CONTENT_END = "content_end"
+    TOOL_START = "tool_start"
+    TOOL_RESULT = "tool_result"
+    USAGE = "usage"
+    END = "end"
+    ERROR = "error"
+    TOOL = "tool"
+    DONE = "Done"
 
-    type="tool": 模型决定调用工具，args 为工具入参
-    type="tool_result": 后端执行工具完毕，result 为执行结果
-    type="thinking": 模型的思考过程内容（reasoning_content）
+
+@dataclass
+class StreamEvent:
+    """统一流式事件模型——覆盖所有 SSE 事件类型。
+
+    type字段值见 EventType 枚举，各事件使用的字段：
+      start:          request_id, model, model_name, thinking, enable_search, timestamp
+      thinking_start: timestamp
+      thinking:       reasoning (增量文本)
+      thinking_end:   reasoning (完整文本), total_chars
+      content_start:  timestamp
+      content:        content (增量文本)
+      content_end:    content (完整文本), total_chars
+      tool_start:     tool_call_id, name, args
+      tool_result:    tool_call_id, name, result, elapsed_ms
+      usage:          prompt_tokens, completion_tokens, total_tokens, reasoning_tokens
+      end:            request_id, stop_reason, elapsed_ms
+      error:          message, code
     """
 
-    type: str  # "tool" | "tool_result" | "thinking"
-    name: str
+    type: str
+    request_id: Optional[str] = None
+    timestamp: Optional[str] = None
+    model: Optional[str] = None
+    model_name: Optional[str] = None
+    thinking: Optional[bool] = None
+    enable_search: Optional[bool] = None
+    reasoning: Optional[str] = None
+    content: Optional[str] = None
+    total_chars: Optional[int] = None
+    tool_call_id: Optional[str] = None
+    name: Optional[str] = None
     args: Optional[dict] = None
     result: Optional[str] = None
+    elapsed_ms: Optional[int] = None
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    reasoning_tokens: Optional[int] = None
+    stop_reason: Optional[str] = None
+    message: Optional[str] = None
+    code: Optional[int] = None
 
 
-# 流式生成器产出类型：内容块(str) 或 工具事件(ToolEvent)
-StreamChunk = Union[str, ToolEvent]
+@dataclass
+class ToolEvent(StreamEvent):
+    """旧版工具事件——保留为向后兼容。type只支持thinking/tool/tool_result。"""
+
+    def __init__(self, type: str, name: str, args: Optional[dict] = None, result: Optional[str] = None):
+        if type not in ("thinking", "tool", "tool_result"):
+            raise ValueError(f"ToolEvent 不支持 type={type}，请使用 StreamEvent")
+        super().__init__(type=type, name=name, args=args, result=result)
+
+
+StreamChunk = Union[str, StreamEvent]
 
 
 class AIProvider(ABC):

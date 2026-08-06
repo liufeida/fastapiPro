@@ -89,14 +89,14 @@ async def wrap_stream_for_logging(
     logger: AIChatLogger,
 ) -> AsyncIterator:
     """包装 chat_stream_with_tools 的 AsyncIterator，收集 chunk 并记录日志。"""
-    from app.services.ai.base import ToolEvent
+    from app.services.ai.base import StreamEvent
     try:
         async for chunk in chunk_iter:
             if isinstance(chunk, str):
                 logger.record_content(chunk)
-            elif isinstance(chunk, ToolEvent):
+            elif isinstance(chunk, StreamEvent):
                 if chunk.type == "thinking":
-                    logger.record_thinking(chunk.result or "")
+                    logger.record_thinking(chunk.reasoning or chunk.result or "")
             yield chunk
     except Exception as exc:
         logger.record_error(f"{type(exc).__name__}: {str(exc)}")

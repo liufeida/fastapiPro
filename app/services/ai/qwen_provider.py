@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from typing import AsyncIterator, Optional
 
 import httpx
@@ -13,7 +14,7 @@ from langchain_core.messages import (
 from langchain_openai import ChatOpenAI
 
 from app.core.exceptions import BusinessException
-from app.services.ai.base import AIProvider, StreamChunk, ToolEvent
+from app.services.ai.base import AIProvider, StreamChunk, StreamEvent
 from app.services.ai.registry import provider_registry
 from app.services.web_search import do_search, web_search
 
@@ -141,6 +142,7 @@ class QwenProvider(AIProvider):
             payload["enable_thinking"] = True
 
         collected: list[StreamChunk] = []
+        last_raw_chunk = None
         done_seen = False
         try:
             async with httpx.AsyncClient(timeout=_HTTPX_STREAM_TIMEOUT) as client:
@@ -159,6 +161,7 @@ class QwenProvider(AIProvider):
                             chunk = json.loads(data_str)
                         except json.JSONDecodeError:
                             continue
+                        last_raw_chunk = chunk
                         choices = chunk.get("choices", [])
                         if not choices:
                             continue
@@ -166,7 +169,7 @@ class QwenProvider(AIProvider):
                         reasoning = delta.get("reasoning_content")
                         if reasoning:
                             collected.append(
-                                ToolEvent(type="thinking", name="reasoning", result=reasoning)
+                                StreamEvent(type="thinking", reasoning=reasoning)
                             )
                         content = delta.get("content")
                         if content is not None:
@@ -181,6 +184,16 @@ class QwenProvider(AIProvider):
                     f"_stream_raw 未收到 [DONE] thinking={thinking} "
                     f"收集 chunks={len(collected)}"
                 )
+
+        if last_raw_chunk:
+            usage = last_raw_chunk.get("usage", {}) or {}
+            if usage:
+                collected.append(StreamEvent(
+                    type="usage",
+                    prompt_tokens=usage.get("prompt_tokens"),
+                    completion_tokens=usage.get("completion_tokens"),
+                    total_tokens=usage.get("total_tokens"),
+                ))
 
         for chunk in collected:
             yield chunk
@@ -221,7 +234,7 @@ class QwenProvider(AIProvider):
         async for chunk in llm.astream(lc_messages):
             reasoning = self._extract_reasoning(chunk)
             if reasoning:
-                yield ToolEvent(type="thinking", name="reasoning", result=reasoning)
+                yield StreamEvent(type="thinking", reasoning=reasoning)
             if chunk.content:
                 yield chunk.content
 
@@ -246,9 +259,7 @@ class QwenProvider(AIProvider):
                 async for chunk in llm.astream(lc_messages):
                     reasoning = self._extract_reasoning(chunk)
                     if reasoning:
-                        yield ToolEvent(
-                            type="thinking", name="reasoning", result=reasoning
-                        )
+                        yield StreamEvent(type="thinking", reasoning=reasoning)
                     if chunk.content:
                         yield chunk.content
             return
@@ -272,18 +283,14 @@ class QwenProvider(AIProvider):
                     async for chunk in llm_with_tools.astream(lc_messages):
                         reasoning = self._extract_reasoning(chunk)
                         if reasoning:
-                            yield ToolEvent(
-                                type="thinking",
-                                name="reasoning",
-                                result=reasoning,
-                            )
+                            yield StreamEvent(type="thinking", reasoning=reasoning)
                         if chunk.content:
                             yield chunk.content
                 return
 
             reasoning = self._extract_reasoning(accumulated)
             if reasoning:
-                yield ToolEvent(type="thinking", name="reasoning", result=reasoning)
+                yield StreamEvent(type="thinking", reasoning=reasoning)
             if accumulated.content:
                 yield accumulated.content
 
@@ -294,7 +301,13 @@ class QwenProvider(AIProvider):
                 tool_args = tool_call.get("args", {})
                 tool_id = tool_call.get("id", "")
 
-                yield ToolEvent(type="tool", name=tool_name, args=tool_args)
+                tool_start_time = time.monotonic()
+                yield StreamEvent(
+                    type="tool_start",
+                    name=tool_name,
+                    args=tool_args,
+                    tool_call_id=tool_id,
+                )
 
                 if tool_name == "web_search":
                     query = tool_args.get("query", "")
@@ -302,13 +315,18 @@ class QwenProvider(AIProvider):
                 else:
                     result = f"未知工具: {tool_name}"
 
-                yield ToolEvent(type="tool_result", name=tool_name, result=result)
+                yield StreamEvent(
+                    type="tool_result",
+                    name=tool_name,
+                    result=result,
+                    tool_call_id=tool_id,
+                    elapsed_ms=int((time.monotonic() - tool_start_time) * 1000),
+                )
 
                 lc_messages.append(
                     ToolMessage(content=result, tool_call_id=tool_id)
                 )
 
-        # 循环耗尽（3 次工具调用用完）：强制让模型输出最终回答
         logger.warning("工具调用循环耗尽，强制让模型输出最终回答")
         if thinking:
             dict_messages = self._to_dict_messages(lc_messages)
@@ -318,11 +336,7 @@ class QwenProvider(AIProvider):
             async for chunk in llm_with_tools.astream(lc_messages):
                 reasoning = self._extract_reasoning(chunk)
                 if reasoning:
-                    yield ToolEvent(
-                        type="thinking",
-                        name="reasoning",
-                        result=reasoning,
-                    )
+                    yield StreamEvent(type="thinking", reasoning=reasoning)
                 if chunk.content:
                     yield chunk.content
 

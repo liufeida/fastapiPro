@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, UploadFile
@@ -7,7 +8,7 @@ from pydantic import BaseModel
 
 from app.api.dependencies import SessionDeep
 from app.core.exceptions import BusinessException, Execute
-from app.services.ai.base import ToolEvent
+from app.services.ai.base import StreamEvent, ToolEvent
 from app.services.ai.dispatcher import ai_dispatcher
 from app.services.ai.registry import provider_registry
 from app.services.ai.sse import build_sse
@@ -83,12 +84,20 @@ async def chat_stream(
     """通用流式对话：根据 model 路由到对应 Provider，输出统一 SSE 事件流。
 
     SSE 事件类型及 JSON 结构：
-    - thinking: {"reasoning": "思考内容文本"}
-    - content: {"content": "生成的内容块"}
-    - tool: {"name": "工具名", "args": {...}}
-    - tool_result: {"name": "工具名", "result": "执行结果"}
-    - Done: {}（空对象）
-    - error: {"message": "错误信息", "code": 错误码}
+    - start:          {"request_id": ..., "model": ..., "thinking": ..., "enable_search": ...}
+    - thinking_start: {"timestamp": ...}
+    - thinking:       {"reasoning": "思考内容增量文本"}
+    - thinking_end:   {"reasoning": "完整思考内容", "total_chars": N}
+    - content_start:  {"timestamp": ...}
+    - content:        {"content": "生成的内容增量块"}
+    - content_end:    {"content": "完整内容", "total_chars": N}
+    - tool_start:     {"tool_call_id": ..., "name": "工具名", "args": {...}}
+    - tool:           {"name": "工具名", "args": {...}}（向后兼容）
+    - tool_result:    {"tool_call_id": ..., "name": "工具名", "result": "...", "elapsed_ms": N}
+    - usage:          {"prompt_tokens": ..., "completion_tokens": ..., "total_tokens": ...}
+    - end:            {"request_id": ..., "stop_reason": "stop/error", "elapsed_ms": N}
+    - Done:           {}（向后兼容）
+    - error:          {"message": "错误信息", "code": 错误码}
     """
     thinking_enabled = thinking.lower() in ("true", "1", "yes")
     logger.info(
@@ -102,7 +111,53 @@ async def chat_stream(
     file_context = await file_parser.parse_many(files) if files else None
 
     async def _event_generator():
-        _total = _reason = _content = _tool = 0
+        import uuid
+
+        request_id = uuid.uuid4().hex
+        start_time = datetime.now(timezone.utc)
+
+        thinking_parts: list[str] = []
+        content_parts: list[str] = []
+        thinking_started = False
+        content_started = False
+        thinking_ended = False
+        content_ended = False
+        usage_data = {
+            "prompt_tokens": None,
+            "completion_tokens": None,
+            "total_tokens": None,
+            "reasoning_tokens": None,
+        }
+
+        yield build_sse("start", {
+            "request_id": request_id,
+            "model": model,
+            "model_name": getattr(config, "model_name", model) if config else model,
+            "thinking": thinking_enabled,
+            "enable_search": enable_search,
+            "timestamp": start_time.isoformat(),
+        })
+
+        def _finish_thinking():
+            nonlocal thinking_started, thinking_ended
+            if thinking_started and not thinking_ended:
+                full = "".join(thinking_parts)
+                thinking_ended = True
+                yield build_sse("thinking_end", {
+                    "reasoning": full,
+                    "total_chars": len(full),
+                })
+
+        def _finish_content():
+            nonlocal content_started, content_ended
+            if content_started and not content_ended:
+                full = "".join(content_parts)
+                content_ended = True
+                yield build_sse("content_end", {
+                    "content": full,
+                    "total_chars": len(full),
+                })
+
         try:
             async for chunk in ai_dispatcher.chat_stream_with_tools(
                 session,
@@ -114,27 +169,106 @@ async def chat_stream(
                 file_context=file_context,
                 _config=config,
             ):
-                _total += 1
-                if isinstance(chunk, ToolEvent):
-                    if chunk.type == "tool":
-                        _tool += 1
-                        yield build_sse("tool", {"name": chunk.name, "args": chunk.args or {}})
+                if isinstance(chunk, StreamEvent):
+                    if chunk.type == "thinking":
+                        for _x in _finish_content():
+                            yield _x
+                        if not thinking_started:
+                            thinking_started = True
+                            yield build_sse("thinking_start", {
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            })
+                        text = chunk.reasoning or chunk.result or ""
+                        thinking_parts.append(text)
+                        yield build_sse("thinking", {"reasoning": text})
+
+                    elif chunk.type == "tool_start":
+                        for _x in _finish_content():
+                            yield _x
+                        for _x in _finish_thinking():
+                            yield _x
+                        yield build_sse("tool_start", {
+                            "tool_call_id": chunk.tool_call_id or "",
+                            "name": chunk.name or "",
+                            "args": chunk.args or {},
+                        })
+                        yield build_sse("tool", {
+                            "name": chunk.name or "",
+                            "args": chunk.args or {},
+                        })
+
                     elif chunk.type == "tool_result":
-                        _tool += 1
-                        yield build_sse("tool_result", {"name": chunk.name, "result": chunk.result or ""})
-                    elif chunk.type == "thinking":
-                        _reason += 1
-                        yield build_sse("thinking", {"reasoning": chunk.result or ""})
+                        yield build_sse("tool_result", {
+                            "tool_call_id": chunk.tool_call_id or "",
+                            "name": chunk.name or "",
+                            "result": chunk.result or "",
+                            "elapsed_ms": chunk.elapsed_ms or 0,
+                        })
+                        content_started = False
+                        content_ended = False
+                        content_parts.clear()
+
+                    elif chunk.type == "usage":
+                        usage_data = {
+                            "prompt_tokens": chunk.prompt_tokens,
+                            "completion_tokens": chunk.completion_tokens,
+                            "total_tokens": chunk.total_tokens,
+                            "reasoning_tokens": chunk.reasoning_tokens,
+                        }
+
                 else:
-                    _content += 1
+                    for _x in _finish_thinking():
+                        yield _x
+                    if not content_started:
+                        content_started = True
+                        yield build_sse("content_start", {
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+                    content_parts.append(chunk)
                     yield build_sse("content", {"content": chunk})
-            logger.info(f"SSE yield 统计 total={_total} reason={_reason} content={_content} tool={_tool}")
+
+            for _x in _finish_content():
+                yield _x
+            for _x in _finish_thinking():
+                yield _x
+
+            yield build_sse("usage", usage_data)
+
+            elapsed_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+            yield build_sse("end", {
+                "stop_reason": "stop",
+                "request_id": request_id,
+                "elapsed_ms": elapsed_ms,
+            })
             yield build_sse("Done", {})
+
         except BusinessException as e:
+            for _x in _finish_content():
+                yield _x
+            for _x in _finish_thinking():
+                yield _x
             yield build_sse("error", {"message": e.message, "code": e.code})
+            elapsed_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+            yield build_sse("end", {
+                "stop_reason": "error",
+                "request_id": request_id,
+                "elapsed_ms": elapsed_ms,
+            })
+            yield build_sse("Done", {})
         except Exception as e:
             logger.exception("AI 流式对话异常")
+            for _x in _finish_content():
+                yield _x
+            for _x in _finish_thinking():
+                yield _x
             yield build_sse("error", {"message": f"[错误: {str(e)}]"})
+            elapsed_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+            yield build_sse("end", {
+                "stop_reason": "error",
+                "request_id": request_id,
+                "elapsed_ms": elapsed_ms,
+            })
+            yield build_sse("Done", {})
 
     return StreamingResponse(
         _event_generator(),

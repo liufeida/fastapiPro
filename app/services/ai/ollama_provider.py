@@ -4,7 +4,7 @@ from typing import AsyncIterator, Optional
 
 import httpx
 
-from app.services.ai.base import AIProvider, StreamChunk
+from app.services.ai.base import AIProvider, StreamChunk, StreamEvent
 from app.services.ai.registry import provider_registry
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ class OllamaProvider(AIProvider):
             return data.get("response", "").strip()
 
     async def chat_stream(self, config, prompt: str, system: Optional[str] = None, thinking: bool = False) -> AsyncIterator[StreamChunk]:
-        """流式对话：逐块 yield 内容字符串。"""
+        """流式对话：逐块 yield 内容字符串，末尾追加 usage 事件。"""
         url, headers = self._resolve_endpoint(config)
         final_prompt = prompt
         if system:
@@ -70,6 +70,7 @@ class OllamaProvider(AIProvider):
             "prompt": final_prompt,
             "stream": True,
         }
+        collected: list[StreamChunk] = []
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream("POST", url, json=payload, headers=headers) as response:
                 response.raise_for_status()
@@ -82,7 +83,17 @@ class OllamaProvider(AIProvider):
                         continue
                     content = chunk.get("response")
                     if content:
-                        yield content  # yield 字符串，路由层用 build_sse 包装
+                        collected.append(content)
+
+        collected.append(StreamEvent(
+            type="usage",
+            prompt_tokens=None,
+            completion_tokens=None,
+            total_tokens=None,
+        ))
+
+        for chunk in collected:
+            yield chunk
 
     async def chat_stream_with_tools(self, config, prompt: str, system: Optional[str] = None, thinking: bool = False, enable_search: bool = False, file_context: Optional[str] = None) -> AsyncIterator[StreamChunk]:
         """Ollama 不支持工具调用，直接退化为 chat_stream。
