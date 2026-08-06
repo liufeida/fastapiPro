@@ -4,7 +4,11 @@ from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
 from alembic import context
+from app.models.ai_model_config import AIModelConfig
+from app.models.ai_chat_log import AIChatLog
+from app.models.api_access_log import ApiAccessLog
 from app.models.files import File
+from app.models.prompt import SystemPrompt
 from app.models.users import Users
 
 

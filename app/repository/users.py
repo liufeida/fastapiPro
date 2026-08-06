@@ -63,6 +63,7 @@ class UsersRepository:
                     Users.username.ilike(pattern),
                     Users.full_name.ilike(pattern),
                     Users.email.ilike(pattern),
+                    Users.phone.ilike(pattern),
                 )
             )
 

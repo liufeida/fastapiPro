@@ -1,0 +1,26 @@
+- [x] Checkpoint 1: `app/models/prompt.py` 定义 SystemPrompt SQLModel（含 Base + Create + Update + Reo），复用 PageParams/PageResult 通用结构
+- [x] Checkpoint 2: `app/repository/prompt.py` 实现所有 CRUD 方法 + get_enabled_by_model + get_global_default + clear_other_defaults，单例导出
+- [x] Checkpoint 3: `app/services/prompt_cache.py` 实现 PromptCache（warm_up / refresh / resolve），内存 dict 缓存 + model_code 精确匹配优先 + 全局 default 兜底
+- [x] Checkpoint 4: `app/services/prompt.py` 实现 PromptServices CRUD + 默认标记互斥 + 单例导出，与 ai_model_config.py 风格一致
+- [x] Checkpoint 5: `app/api/v1/prompts.py` 路由齐全（create / list / enabled / by_id / update / delete），POST list 模式，ResponseModel 包裹
+- [x] Checkpoint 6: `dispatcher.py` 的 `_build_identity_system` 改造为从 PromptCache.resolve 取 DB Prompt + 身份前缀 + 用户 system 追加
+- [x] Checkpoint 7: `main.py` lifespan startup 调用 prompt_cache.warm_up
+- [x] Checkpoint 8: `app/models/api_access_log.py` + `app/repository/api_access_log.py` + `app/services/log_queue.py` 完整实现，批量写入
+- [x] Checkpoint 9: middleware 扩展 api_access_log_middleware——生成 trace_id（contextvars）、记录非流式完整 body、流式标记 is_streaming=true 存摘要、捕获异常、脱敏 api_key/Authorization
+- [x] Checkpoint 10: 日志接口 `/v1/logs/*` 自身不记录到 api_access_log（白名单跳过）
+- [x] Checkpoint 11: `app/models/ai_chat_log.py` + `app/repository/ai_chat_log.py` + `app/services/ai_logger.py` 完整实现
+- [x] Checkpoint 12: dispatcher 的 chat() 和 chat_stream_with_tools() 埋点——chat 直接 enqueue，流式包装 async generator 收集完整 response_content + thinking + messages
+- [x] Checkpoint 13: 同一请求的 api_access_log 和 ai_chat_log trace_id 一致（由 contextvars 保证，HTTP 中间件生成 trace_id 传递到 AI 层）
+- [x] Checkpoint 14: `app/api/v1/logs.py` 路由齐全（api/list + api/{id} + ai/list + ai/{id} + 两条 delete），分页列表支持多条件筛选 + 时间范围
+- [x] Checkpoint 15: 列表接口大字段截断返回（前 N 字符 + total_length），详情接口返回完整
+- [x] Checkpoint 16: Alembic migration 生成并应用成功，psql 能看到 system_prompt / api_access_log / ai_chat_log 三张表
+- [x] Checkpoint 17: 启动应用无 import 错误、lifespan 正常
+- [x] Checkpoint 18: 完整链路验证——创建 Prompt → AI chat → 查两张日志表 → trace_id 匹配 → DB Prompt 注入验证
+- [x] Checkpoint 19: Prompt 更新后无需重启，下次 AI 调用拿到新 content
+- [x] Checkpoint 20: 敏感数据脱敏——request_body/messages/error_message 中无明文 api_key
+- [x] Checkpoint 21: 与现有 `ai_model_config` 模块对比，分层结构/命名/单例导出/响应格式风格一致
+- [x] Checkpoint 22: 主请求耗时不受日志写入影响（异步队列 fire-and-forget）
+
+## 额外修复（测试中发现）
+- [x] Bug: log_queue.py enqueue 时注入 created_at（绕过 SQLModel default_factory）
+- [x] Bug: repository 的 order_by 用 nullslast(desc) 修复 NULLS FIRST 问题
