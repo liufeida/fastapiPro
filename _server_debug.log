@@ -1,0 +1,36 @@
+﻿.venv\Scripts\uvicorn.exe : 2026-08-06 18:04:55 | INFO     | app.services.ai.registry | 已注册 AI Provider: deepseek
+At C:\Users\15690\AppData\Local\Temp\trae-agent-toolhost\jobs\job-3e68ec5815034007a772e3a2428f8556\command.ps1:15 char:
+6324
++ ... lyContinue; .venv\Scripts\uvicorn.exe app.main:app --host 127.0.0.1 - ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (2026-08-06 18:0...vider: deepseek:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+2026-08-06 18:04:55 | INFO     | app.services.ai.registry | 已注册 AI Provider: ollama
+2026-08-06 18:04:55 | INFO     | app.services.ai.registry | 已注册 AI Provider: qwen
+INFO:     Started server process [10588]
+INFO:     Waiting for application startup.
+2026-08-06 18:04:58 | INFO     | app.services.log_queue | LogQueue background flush started
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8765 (Press CTRL+C to quit)
+2026-08-06 18:04:59 | INFO     | app.api.v1.ai | AI 流式请求: model=deepseek-v4-pro, prompt=say hi..., thinking=true -> Tru
+e, enable_search=False
+2026-08-06 18:04:59 | INFO     | app.services.ai.dispatcher | AI 流式调度: model=deepseek-v4-pro, provider=deepseek, thinki
+ng=True, enable_search=False
+2026-08-06 18:05:00 | INFO     | httpx | HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-08-06 18:05:00 | WARNING  | app.services.ai.deepseek_provider | [RAW DELTA keys=['role', 'content', 'reasoning_con
+tent']] content=None reason=''
+2026-08-06 18:05:01 | WARNING  | app.services.ai.deepseek_provider | [RAW DELTA keys=['content', 'reasoning_content']] 
+content=None reason='We'
+2026-08-06 18:05:01 | WARNING  | app.services.ai.deepseek_provider | [RAW DELTA keys=['content', 'reasoning_content']] 
+content=None reason=' are'
+2026-08-06 18:05:01 | WARNING  | app.services.ai.deepseek_provider | [RAW DELTA keys=['content', 'reasoning_content']] 
+content=None reason=' the'
+2026-08-06 18:05:01 | WARNING  | app.services.ai.deepseek_provider | [RAW DELTA keys=['content', 'reasoning_content']] 
+content=None reason=' model'
+2026-08-06 18:05:01 | WARNING  | app.services.ai.deepseek_provider | [RAW DELTA keys=['content', 'reasoning_content']] 
+content=None reason=':'
+2026-08-06 18:05:01 | WARNING  | app.services.ai.deepseek_provider | [RAW DELTA keys=['content', 'reasoning_content']] 
+content=None reason=' Deep'
+2026-08-06 18:05:02 | INFO     | app.services.log_queue | Flushed 1 api_access_log records
+2026-08-06 18:05:02 | INFO     | app.services.log_queue | Flushed 1 ai_chat_log records

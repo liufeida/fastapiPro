@@ -20,6 +20,14 @@ from app.services.web_search import do_search, web_search
 logger = logging.getLogger(__name__)
 
 
+_HTTPX_STREAM_TIMEOUT = httpx.Timeout(
+    connect=30.0,
+    read=None,        # streaming 模式下不做 chunk 间隔超时（模型 thinking 阶段可能长时间无数据）
+    write=30.0,
+    pool=30.0,
+)
+
+
 class DeepSeekProvider(AIProvider):
     """DeepSeek 模型 Provider。
 
@@ -96,15 +104,21 @@ class DeepSeekProvider(AIProvider):
         return result
 
     def _get_llm(self, config, streaming=False, thinking=False) -> ChatDeepSeek:
-        """创建 ChatDeepSeek 实例（thinking=false 路径用）。"""
+        """创建 ChatDeepSeek 实例。"""
         if not config.api_key:
             raise BusinessException(code=500, message="DeepSeek API Key 未配置")
-        extra_body = {"thinking": {"type": "enabled"}} if thinking else {}
+        extra_body = (
+            {"thinking": {"type": "enabled"}}
+            if thinking
+            else {"thinking": {"type": "disabled"}}
+        )
         return ChatDeepSeek(
             model=config.model_code,
             api_key=config.api_key,
             base_url=config.base_url or "https://api.deepseek.com",
-            temperature=config.temperature if config.temperature is not None else 0.7,
+            temperature=(
+                config.temperature if config.temperature is not None else 0.7
+            ),
             streaming=streaming,
             extra_body=extra_body,
         )
@@ -112,9 +126,13 @@ class DeepSeekProvider(AIProvider):
     async def _stream_raw(
         self, config, messages, thinking=False
     ) -> AsyncIterator[StreamChunk]:
-        """原生 httpx 流式：直接消费 DeepSeek SSE，提取 reasoning_content。
+        """原生 httpx 流式：直接消费模型 SSE，提取 reasoning_content。
 
         thinking=true 时必须走此方法（LangChain 会清除 reasoning_content 字段）。
+        使用 read=None 超时——thinking 模式下 reasoning→content 之间可能有长时间间隔。
+
+        先完整收集所有 chunk（确保 httpx 请求完整结束），再逐个 yield，
+        避免嵌套 async generator 中 httpx 连接被 yield 暂停意外关闭。
         """
         url = (config.base_url or "https://api.deepseek.com").rstrip("/")
         url = f"{url}/chat/completions"
@@ -130,42 +148,53 @@ class DeepSeekProvider(AIProvider):
         if thinking:
             payload["thinking"] = {"type": "enabled"}
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
-                "POST", url, json=payload, headers=headers
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line or not line.startswith("data:"):
-                        continue
-                    data_str = line[len("data:") :].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data_str)
-                    except json.JSONDecodeError:
-                        continue
-                    choices = chunk.get("choices", [])
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta", {})
-                    # === TEMP DEBUG ===
-                    keys = list(delta.keys())
-                    reason = delta.get("reasoning_content")
-                    content = delta.get("content")
-                    if reason is None and content is None:
-                        logger.warning(f"[SSE DEBUG] delta has keys={keys}")
-                    if content is not None:
-                        logger.warning(f"[SSE DEBUG] content delta present: {repr(content[:30])}")
-                    # === END DEBUG ===
-                    reasoning = delta.get("reasoning_content")
-                    if reasoning:
-                        yield ToolEvent(
-                            type="thinking", name="reasoning", result=reasoning
-                        )
-                    content = delta.get("content")
-                    if content:
-                        yield content
+        collected: list[StreamChunk] = []
+        done_seen = False
+        try:
+            async with httpx.AsyncClient(timeout=_HTTPX_STREAM_TIMEOUT) as client:
+                async with client.stream(
+                    "POST", url, json=payload, headers=headers
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data_str = line[len("data:") :].strip()
+                        if data_str == "[DONE]":
+                            done_seen = True
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+                        choices = chunk.get("choices", [])
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta", {})
+                        reasoning = delta.get("reasoning_content")
+                        if reasoning:
+                            collected.append(
+                                ToolEvent(type="thinking", name="reasoning", result=reasoning)
+                            )
+                        content = delta.get("content")
+                        if content is not None:
+                            collected.append(content)
+        except (httpx.HTTPError, httpx.TimeoutException) as exc:
+            logger.warning(
+                f"_stream_raw httpx 异常 thinking={thinking}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        except (BrokenPipeError, ConnectionResetError, OSError) as exc:
+            logger.info(f"_stream_raw 客户端断开 thinking={thinking}: {exc}")
+        finally:
+            if not done_seen:
+                logger.warning(
+                    f"_stream_raw 未收到 [DONE] thinking={thinking} "
+                    f"收集 chunks={len(collected)}"
+                )
+
+        for chunk in collected:
+            yield chunk
 
     @staticmethod
     def _extract_reasoning(chunk: AIMessage) -> Optional[str]:
@@ -178,13 +207,11 @@ class DeepSeekProvider(AIProvider):
         """非流式对话，返回完整回复。"""
         messages = self._build_messages(prompt, system)
         if thinking:
-            # thinking=true: 走原生 httpx 收集全部内容（跳过 thinking 事件）
             parts: list[str] = []
             async for chunk in self._stream_raw(config, messages, thinking=True):
                 if isinstance(chunk, str):
                     parts.append(chunk)
             return "".join(parts)
-        # thinking=false: 走 LangChain invoke
         llm = self._get_llm(config, streaming=False, thinking=False)
         lc_messages = self._to_langchain_messages(messages)
         response = llm.invoke(lc_messages)
@@ -200,24 +227,17 @@ class DeepSeekProvider(AIProvider):
         """流式对话，逐块返回内容。开启 thinking 时会先输出思考内容。"""
         messages = self._build_messages(prompt, system)
         if thinking:
-            # thinking=true: 直接走原生 httpx SSE
             async for chunk in self._stream_raw(config, messages, thinking=True):
                 yield chunk
             return
-        # thinking=false: 走 LangChain astream
         llm = self._get_llm(config, streaming=True, thinking=False)
         lc_messages = self._to_langchain_messages(messages)
-        reasoning_chunks = 0
-        content_chunks = 0
         async for chunk in llm.astream(lc_messages):
             reasoning = self._extract_reasoning(chunk)
             if reasoning:
-                reasoning_chunks += 1
                 yield ToolEvent(type="thinking", name="reasoning", result=reasoning)
             if chunk.content:
-                content_chunks += 1
                 yield chunk.content
-        logger.warning(f"[LC STREAM DEBUG] reasoning_chunks={reasoning_chunks} content_chunks={content_chunks}")
 
     async def chat_stream_with_tools(
         self,
@@ -231,9 +251,8 @@ class DeepSeekProvider(AIProvider):
         """增强版流式对话：支持文件上下文与联网搜索工具调用循环。
 
         - enable_search=False: 退化为 chat_stream
-        - enable_search=True 且 thinking=false: LangChain bind_tools 工具循环
-        - enable_search=True 且 thinking=true: 工具循环用 LangChain（不提取 reasoning），
-          最终回答阶段用 _stream_raw 输出（能拿到 reasoning_content）
+        - enable_search=True: LangChain bind_tools 工具循环
+        - 工具循环耗尽后强制输出最终回答，确保 SSE 流完整
         """
         messages = self._build_messages(prompt, system, file_context)
 
@@ -269,14 +288,12 @@ class DeepSeekProvider(AIProvider):
             # 没有工具调用：输出最终回答
             if not tool_calls:
                 if thinking:
-                    # thinking=true: 用 _stream_raw 输出（能拿到 reasoning_content）
                     dict_messages = self._to_dict_messages(lc_messages)
                     async for chunk in self._stream_raw(
                         config, dict_messages, thinking=True
                     ):
                         yield chunk
                 else:
-                    # thinking=false: 用 LangChain astream
                     async for chunk in llm_with_tools.astream(lc_messages):
                         reasoning = self._extract_reasoning(chunk)
                         if reasoning:
@@ -289,41 +306,35 @@ class DeepSeekProvider(AIProvider):
                             yield chunk.content
                 return
 
-            # 有工具调用：先输出模型在 tool_call 前可能产生的思考/内容（如有）
+            # 有工具调用：先输出模型在 tool_call 前可能产生的思考/内容
             reasoning = self._extract_reasoning(accumulated)
             if reasoning:
                 yield ToolEvent(type="thinking", name="reasoning", result=reasoning)
             if accumulated.content:
                 yield accumulated.content
 
-            # 把模型决策（含 tool_calls）加入上下文
             lc_messages.append(accumulated)
 
-            # 逐个执行工具
             for tool_call in tool_calls:
                 tool_name = tool_call.get("name", "")
                 tool_args = tool_call.get("args", {})
                 tool_id = tool_call.get("id", "")
 
-                # 推送工具调用事件
                 yield ToolEvent(type="tool", name=tool_name, args=tool_args)
 
-                # 执行 web_search
                 if tool_name == "web_search":
                     query = tool_args.get("query", "")
                     result = do_search(query)
                 else:
                     result = f"未知工具: {tool_name}"
 
-                # 推送工具结果事件
                 yield ToolEvent(
                     type="tool_result", name=tool_name, result=result
                 )
 
-                # 把工具结果作为 ToolMessage 回传给模型
-                lc_messages.append(ToolMessage(content=result, tool_call_id=tool_id))
-
-            # 进入下一轮：让模型基于工具结果继续生成
+                lc_messages.append(
+                    ToolMessage(content=result, tool_call_id=tool_id)
+                )
 
         # 循环耗尽（3 次工具调用用完）：强制让模型输出最终回答
         logger.warning("工具调用循环耗尽，强制让模型输出最终回答")
@@ -344,5 +355,4 @@ class DeepSeekProvider(AIProvider):
                     yield chunk.content
 
 
-# 模块加载时注册
 provider_registry.register("deepseek", DeepSeekProvider())

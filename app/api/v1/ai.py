@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, UploadFile
-from fastapi.sse import EventSourceResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.api.dependencies import SessionDeep
@@ -68,7 +68,6 @@ async def chat(session: SessionDeep, request: ChatRequest):
 
 @router.post(
     "/chat/stream",
-    response_class=EventSourceResponse,
     summary="通用流式对话（SSE，支持文件上传与联网搜索）",
     operation_id="aiChatStream",
 )
@@ -91,44 +90,58 @@ async def chat_stream(
     - Done: {}（空对象）
     - error: {"message": "错误信息", "code": 错误码}
     """
-    # 手动解析 thinking 参数（FastAPI Form 的 bool 转换有问题）
     thinking_enabled = thinking.lower() in ("true", "1", "yes")
     logger.info(
         f"AI 流式请求: model={model}, prompt={prompt[:50]}..., "
         f"thinking={thinking} -> {thinking_enabled}, enable_search={enable_search}"
     )
 
-    # 在 SSE 响应开始前做校验，失败时直接抛 BusinessException → HTTP 错误（而非 SSE error 事件）
     config = await ai_dispatcher.resolve(session, model)
     ai_dispatcher.check_capability(config, thinking_enabled, enable_search)
 
-    # 解析上传文件
     file_context = await file_parser.parse_many(files) if files else None
 
-    try:
-        async for chunk in ai_dispatcher.chat_stream_with_tools(
-            session,
-            model_code=model,
-            prompt=prompt,
-            system=system,
-            thinking=thinking_enabled,
-            enable_search=enable_search,
-            file_context=file_context,
-            _config=config,
-        ):
-            if isinstance(chunk, ToolEvent):
-                if chunk.type == "tool":
-                    yield build_sse("tool", {"name": chunk.name, "args": chunk.args or {}})
-                elif chunk.type == "tool_result":
-                    yield build_sse("tool_result", {"name": chunk.name, "result": chunk.result or ""})
-                elif chunk.type == "thinking":
-                    yield build_sse("thinking", {"reasoning": chunk.result or ""})
-            else:
-                yield build_sse("content", {"content": chunk})
+    async def _event_generator():
+        _total = _reason = _content = _tool = 0
+        try:
+            async for chunk in ai_dispatcher.chat_stream_with_tools(
+                session,
+                model_code=model,
+                prompt=prompt,
+                system=system,
+                thinking=thinking_enabled,
+                enable_search=enable_search,
+                file_context=file_context,
+                _config=config,
+            ):
+                _total += 1
+                if isinstance(chunk, ToolEvent):
+                    if chunk.type == "tool":
+                        _tool += 1
+                        yield build_sse("tool", {"name": chunk.name, "args": chunk.args or {}})
+                    elif chunk.type == "tool_result":
+                        _tool += 1
+                        yield build_sse("tool_result", {"name": chunk.name, "result": chunk.result or ""})
+                    elif chunk.type == "thinking":
+                        _reason += 1
+                        yield build_sse("thinking", {"reasoning": chunk.result or ""})
+                else:
+                    _content += 1
+                    yield build_sse("content", {"content": chunk})
+            logger.info(f"SSE yield 统计 total={_total} reason={_reason} content={_content} tool={_tool}")
+            yield build_sse("Done", {})
+        except BusinessException as e:
+            yield build_sse("error", {"message": e.message, "code": e.code})
+        except Exception as e:
+            logger.exception("AI 流式对话异常")
+            yield build_sse("error", {"message": f"[错误: {str(e)}]"})
 
-        yield build_sse("Done", {})
-    except BusinessException as e:
-        yield build_sse("error", {"message": e.message, "code": e.code})
-    except Exception as e:
-        logger.exception("AI 流式对话异常")
-        yield build_sse("error", {"message": f"[错误: {str(e)}]"})
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

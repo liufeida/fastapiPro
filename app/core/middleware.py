@@ -105,12 +105,8 @@ def register_middleware_handles(app: FastAPI):
                     async for chunk in original_iterator:
                         yield chunk
                         chunk_count += 1
-                        if len(first_chunks) < 3:
+                        if sum(len(c) for c in first_chunks) < max_preview_bytes:
                             first_chunks.append(chunk)
-                        elif sum(len(c) for c in first_chunks) < max_preview_bytes:
-                            first_chunks.append(chunk)
-                            if sum(len(c) for c in first_chunks) >= max_preview_bytes:
-                                break
 
                     elapsed = (time.perf_counter() - start_time) * 1000
                     preview = b"".join(first_chunks).decode("utf-8", errors="replace")

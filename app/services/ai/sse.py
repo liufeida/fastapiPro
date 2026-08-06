@@ -1,28 +1,23 @@
 import json
-import uuid
-
-from fastapi.sse import ServerSentEvent
 
 
-def build_sse(event: str, data) -> ServerSentEvent:
-    """构造统一格式的 SSE 事件。
+def build_sse(event: str, data) -> bytes:
+    """构造 SSE 事件（直接返回 bytes，兼容 StreamingResponse）。
 
-    data 统一序列化为 JSON 字符串（ensure_ascii=False，中文不转义）。
-    所有 AI Provider 的流式输出必须使用此工具，保证前端收到一致的事件格式。
+    SSE 格式:
+        event: {event}\\n
+        data: {json}\\n
+        \\n
 
     Args:
         event: 事件类型（thinking/content/tool/tool_result/Done/error）
-        data: dict 或 None，None 时序列化为空 dict {}
+        data: dict 或 None
 
     Returns:
-        ServerSentEvent 实例
+        SSE 格式的 bytes
     """
     if data is None:
         data = {}
     payload = json.dumps(data, ensure_ascii=False)
-    return ServerSentEvent(
-        raw_data=payload,
-        event=event,
-        id=uuid.uuid4().hex,
-        retry=5000,
-    )
+    lines = [f"event: {event}", f"data: {payload}"]
+    return ("\n".join(lines) + "\n\n").encode("utf-8")
