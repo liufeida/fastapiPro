@@ -1,0 +1,10 @@
+- [x] Checkpoint 1: `docs/ai-architecture/01-langchain-and-orchestration.md` 文件存在且为有效 UTF-8 Markdown
+- [x] Checkpoint 2: LangChain 文档覆盖 ChatDeepSeek、ChatOpenAI、bind_tools、astream/ainvoke、消息双向转换、Provider 抽象、Registry、Dispatcher、身份系统提示词、能力校验、thinking 双通道、工具循环、日志包装
+- [x] Checkpoint 3: LangChain 文档中所有文件路径和函数名与实际仓库一致（base.py、dispatcher.py、registry.py、deepseek_provider.py 等）
+- [x] Checkpoint 4: LangChain 文档包含新增一个模型的操作步骤
+- [x] Checkpoint 5: `docs/ai-architecture/02-sse-streaming.md` 文件存在且为有效 UTF-8 Markdown
+- [x] Checkpoint 6: SSE 文档列出 EventType 全部枚举值（start/thinking_start/thinking/thinking_end/content_start/content/content_end/tool_start/tool_result/usage/end/error/tool/Done），每个含 type、JSON 字段、含义、触发时机
+- [x] Checkpoint 7: SSE 文档描述完整事件序列，与 ai.py 的 _event_generator 逻辑一致
+- [x] Checkpoint 8: SSE 文档列出至少 5 个踩过的坑及其解决方案（reasoning_content 清除、EventSourceResponse BrokenResourceError、read timeout、工具循环耗尽、Done 事件缺失）
+- [x] Checkpoint 9: SSE 文档包含 build_sse 函数实现细节（bytes 格式拼接）
+- [x] Checkpoint 10: 两份文档无遗漏、无明显错误、内容互相交叉但不重复

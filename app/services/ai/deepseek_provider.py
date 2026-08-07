@@ -240,12 +240,22 @@ class DeepSeekProvider(AIProvider):
             return
         llm = self._get_llm(config, streaming=True, thinking=False)
         lc_messages = self._to_langchain_messages(messages)
+        last_chunk = None
         async for chunk in llm.astream(lc_messages):
+            last_chunk = chunk
             reasoning = self._extract_reasoning(chunk)
             if reasoning:
                 yield StreamEvent(type="thinking", reasoning=reasoning)
             if chunk.content:
                 yield chunk.content
+        if last_chunk and last_chunk.usage_metadata:
+            um = last_chunk.usage_metadata
+            yield StreamEvent(
+                type="usage",
+                prompt_tokens=um.get("input_tokens"),
+                completion_tokens=um.get("output_tokens"),
+                total_tokens=um.get("total_tokens"),
+            )
 
     async def chat_stream_with_tools(
         self,
@@ -272,12 +282,22 @@ class DeepSeekProvider(AIProvider):
             else:
                 llm = self._get_llm(config, streaming=True, thinking=False)
                 lc_messages = self._to_langchain_messages(messages)
+                last_chunk = None
                 async for chunk in llm.astream(lc_messages):
+                    last_chunk = chunk
                     reasoning = self._extract_reasoning(chunk)
                     if reasoning:
                         yield StreamEvent(type="thinking", reasoning=reasoning)
                     if chunk.content:
                         yield chunk.content
+                if last_chunk and last_chunk.usage_metadata:
+                    um = last_chunk.usage_metadata
+                    yield StreamEvent(
+                        type="usage",
+                        prompt_tokens=um.get("input_tokens"),
+                        completion_tokens=um.get("output_tokens"),
+                        total_tokens=um.get("total_tokens"),
+                    )
             return
 
         # 开启搜索：绑定 web_search 工具
@@ -299,12 +319,22 @@ class DeepSeekProvider(AIProvider):
                     ):
                         yield chunk
                 else:
+                    last_chunk = None
                     async for chunk in llm_with_tools.astream(lc_messages):
+                        last_chunk = chunk
                         reasoning = self._extract_reasoning(chunk)
                         if reasoning:
                             yield StreamEvent(type="thinking", reasoning=reasoning)
                         if chunk.content:
                             yield chunk.content
+                    if last_chunk and last_chunk.usage_metadata:
+                        um = last_chunk.usage_metadata
+                        yield StreamEvent(
+                            type="usage",
+                            prompt_tokens=um.get("input_tokens"),
+                            completion_tokens=um.get("output_tokens"),
+                            total_tokens=um.get("total_tokens"),
+                        )
                 return
 
             reasoning = self._extract_reasoning(accumulated)
@@ -353,12 +383,22 @@ class DeepSeekProvider(AIProvider):
             async for chunk in self._stream_raw(config, dict_messages, thinking=True):
                 yield chunk
         else:
+            last_chunk = None
             async for chunk in llm_with_tools.astream(lc_messages):
+                last_chunk = chunk
                 reasoning = self._extract_reasoning(chunk)
                 if reasoning:
                     yield StreamEvent(type="thinking", reasoning=reasoning)
                 if chunk.content:
                     yield chunk.content
+            if last_chunk and last_chunk.usage_metadata:
+                um = last_chunk.usage_metadata
+                yield StreamEvent(
+                    type="usage",
+                    prompt_tokens=um.get("input_tokens"),
+                    completion_tokens=um.get("output_tokens"),
+                    total_tokens=um.get("total_tokens"),
+                )
 
 
 provider_registry.register("deepseek", DeepSeekProvider())

@@ -26,6 +26,8 @@ class AIChatLogger:
         self._error: bool = False
         self._error_msg: str | None = None
         self._enqueued: bool = False
+        self._input_tokens: int | None = None
+        self._output_tokens: int | None = None
 
     def start(self, config, prompt: str, system: str) -> None:
         """开始记录一次 AI 调用。"""
@@ -54,6 +56,12 @@ class AIChatLogger:
         self._error = True
         self._error_msg = msg
 
+    def record_usage(self, prompt_tokens: int | None, completion_tokens: int | None) -> None:
+        if prompt_tokens is not None:
+            self._input_tokens = prompt_tokens
+        if completion_tokens is not None:
+            self._output_tokens = completion_tokens
+
     def enqueue(self) -> None:
         """完成记录并入队（非阻塞、幂等）。"""
         if self._enqueued:
@@ -72,8 +80,8 @@ class AIChatLogger:
             "messages": self._messages_str,
             "response_content": "".join(self._collected),
             "thinking_content": "".join(self._thinking_parts) or None,
-            "input_tokens": None,
-            "output_tokens": None,
+            "input_tokens": self._input_tokens,
+            "output_tokens": self._output_tokens,
             "duration_ms": round(elapsed_ms, 2),
             "thinking_ms": round(thinking_ms, 2) if thinking_ms else None,
             "is_error": self._error,
@@ -97,6 +105,8 @@ async def wrap_stream_for_logging(
             elif isinstance(chunk, StreamEvent):
                 if chunk.type == "thinking":
                     logger.record_thinking(chunk.reasoning or chunk.result or "")
+                elif chunk.type == "usage":
+                    logger.record_usage(chunk.prompt_tokens, chunk.completion_tokens)
             yield chunk
     except Exception as exc:
         logger.record_error(f"{type(exc).__name__}: {str(exc)}")

@@ -71,6 +71,7 @@ class OllamaProvider(AIProvider):
             "stream": True,
         }
         collected: list[StreamChunk] = []
+        last_chunk = None
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream("POST", url, json=payload, headers=headers) as response:
                 response.raise_for_status()
@@ -81,15 +82,22 @@ class OllamaProvider(AIProvider):
                         chunk = json.loads(line)
                     except json.JSONDecodeError:
                         continue
+                    last_chunk = chunk
                     content = chunk.get("response")
                     if content:
                         collected.append(content)
 
+        prompt_tokens = None
+        completion_tokens = None
+        if last_chunk:
+            prompt_tokens = last_chunk.get("prompt_eval_count")
+            completion_tokens = last_chunk.get("eval_count")
+
         collected.append(StreamEvent(
             type="usage",
-            prompt_tokens=None,
-            completion_tokens=None,
-            total_tokens=None,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=(prompt_tokens or 0) + (completion_tokens or 0) if (prompt_tokens or completion_tokens) else None,
         ))
 
         for chunk in collected:
