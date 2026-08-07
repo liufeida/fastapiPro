@@ -83,6 +83,14 @@ class PromptRepository:
 
     async def create(self, session: AsyncSession, data: dict) -> SystemPrompt:
         """创建一条提示词。"""
+        # 如果前端没传 sort_order，自动赋值当前最大值 + 1
+        if "sort_order" not in data:
+            stmt = select(func.coalesce(func.max(SystemPrompt.sort_order), 0)).where(
+                SystemPrompt.is_deleted.is_(False)
+            )
+            max_sort_order = await session.scalar(stmt) or 0
+            data["sort_order"] = max_sort_order + 1
+
         db_prompt = SystemPrompt.model_validate(data)
         session.add(db_prompt)
         await session.commit()

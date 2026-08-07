@@ -39,7 +39,7 @@ class PromptServices:
             if bound:
                 raise BusinessException(code=400, message="该模型已被其他提示词绑定")
 
-        prompt_dict = data.model_dump()
+        prompt_dict = data.model_dump(exclude_unset=True)
         db_prompt = await prompt_repository.create(session, prompt_dict)
 
         if db_prompt.is_default:
