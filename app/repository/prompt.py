@@ -230,5 +230,18 @@ class PromptRepository:
         if others:
             await session.commit()
 
+    async def is_model_code_bound(
+        self, session: AsyncSession, model_code: str, exclude_id: str | None = None
+    ) -> bool:
+        """检查是否存在另一条未删除的 prompt 已绑定该 model_code。"""
+        stmt = select(func.count()).select_from(SystemPrompt).where(
+            SystemPrompt.model_code == model_code,
+            SystemPrompt.is_deleted.is_(False),
+        )
+        if exclude_id:
+            stmt = stmt.where(SystemPrompt.id != exclude_id)
+        count = await session.scalar(stmt)
+        return (count or 0) > 0
+
 
 prompt_repository = PromptRepository()

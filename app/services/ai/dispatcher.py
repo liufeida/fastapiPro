@@ -6,6 +6,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import BusinessException
 from app.models.ai_model_config import AIModelConfig
+from app.models.prompt import SystemPrompt
 from app.repository.ai_model_config import ai_model_config_repository
 from app.services.ai.base import StreamChunk
 from app.services.ai.registry import provider_registry
@@ -22,27 +23,37 @@ def _format_exception(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
-def _build_identity_system(config: AIModelConfig, user_system: Optional[str]) -> str:
-    """拼接身份系统提示词。
+def _append_unique(parts: list[str], content: str | None) -> None:
+    if content and content not in parts:
+        parts.append(content)
 
-    始终注入：
-      - 身份（model_name + model_code）
-      - 当前日期时间（让模型能回答"今天几号"、"星期几"等）
-      - 从 prompt_cache 取 DB 配置的系统提示词（按 model_code 精确匹配 → 全局默认）
-    用户的 system 追加在最后面（如果有）。
-    """
+
+def _build_identity_system(
+    config: AIModelConfig,
+    user_system: Optional[str],
+    extra_prompt: Optional[SystemPrompt] = None,
+) -> str:
     now = datetime.now(timezone.utc).astimezone()
     identity = (
         f"你是 {config.model_name}（model_code: {config.model_code}）。\n"
         f"当前日期时间: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}（{now.strftime('%A')}）。"
     )
+    parts: list[str] = [identity]
+
+    global_default = prompt_cache.global_default
+    if global_default and global_default.content:
+        _append_unique(parts, global_default.content)
+
     db_prompt = prompt_cache.resolve(config.model_code)
-    db_content = db_prompt.content if db_prompt else ""
-    parts = [identity]
-    if db_content:
-        parts.append(db_content)
+    if db_prompt and db_prompt.content:
+        _append_unique(parts, db_prompt.content)
+
+    if extra_prompt and extra_prompt.content:
+        _append_unique(parts, extra_prompt.content)
+
     if user_system:
-        parts.append(user_system)
+        _append_unique(parts, user_system)
+
     return "\n".join(parts)
 
 
@@ -71,6 +82,25 @@ class AIDispatcher:
         if enable_search and not config.supports_tools:
             raise BusinessException(code=400, message="该模型不支持工具调用")
 
+    async def _load_optional_prompt(
+        self, session: AsyncSession, prompt_code: str
+    ) -> SystemPrompt | None:
+        cached = prompt_cache.get_optional_by_code(prompt_code)
+        if cached is not None:
+            return cached
+
+        from app.repository.prompt import prompt_repository
+        db_prompt = await prompt_repository.get_by_prompt_code(session, prompt_code)
+        if db_prompt is None:
+            raise BusinessException(code=404, message=f"提示词不存在: {prompt_code}")
+        if not db_prompt.is_enabled:
+            raise BusinessException(code=400, message="该提示词已禁用，不可选择")
+        if db_prompt.model_code is not None:
+            raise BusinessException(code=400, message="该提示词已被模型绑定，不可选择")
+        if db_prompt.is_default:
+            raise BusinessException(code=400, message="该提示词是全局默认，不可选择")
+        return db_prompt
+
     async def chat(
         self,
         session: AsyncSession,
@@ -78,6 +108,7 @@ class AIDispatcher:
         prompt: str,
         system: Optional[str] = None,
         thinking: bool = False,
+        prompt_code: str | None = None,
     ) -> str:
         """通用非流式对话。"""
         from app.services.ai_logger import AIChatLogger
@@ -89,7 +120,10 @@ class AIDispatcher:
             self.check_capability(config, thinking, enable_search=False)
             ai_logger.bind_config(config)
             provider = provider_registry.get(config.provider_code)
-            system_prompt = _build_identity_system(config, system)
+            extra_prompt = None
+            if prompt_code:
+                extra_prompt = await self._load_optional_prompt(session, prompt_code)
+            system_prompt = _build_identity_system(config, system, extra_prompt)
             ai_logger._system_prompt = system_prompt
             logger.info(f"AI 调度: model={model_code}, provider={config.provider_code}, thinking={thinking}")
 
@@ -112,6 +146,7 @@ class AIDispatcher:
         enable_search: bool = False,
         file_context: Optional[str] = None,
         _config: Optional[AIModelConfig] = None,
+        prompt_code: str | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """通用流式对话（含工具调用）。
 
@@ -128,7 +163,10 @@ class AIDispatcher:
             self.check_capability(config, thinking, enable_search)
             ai_logger.bind_config(config)
             provider = provider_registry.get(config.provider_code)
-            system_prompt = _build_identity_system(config, system)
+            extra_prompt = None
+            if prompt_code:
+                extra_prompt = await self._load_optional_prompt(session, prompt_code)
+            system_prompt = _build_identity_system(config, system, extra_prompt)
             ai_logger._system_prompt = system_prompt
             logger.info(
                 f"AI 流式调度: model={model_code}, provider={config.provider_code}, "

@@ -44,6 +44,7 @@ class ChatRequest(BaseModel):
     prompt: str
     system: Optional[str] = None
     thinking: bool = False
+    prompt_code: Optional[str] = None
 
 
 @router.get(
@@ -78,6 +79,7 @@ async def chat(session: SessionDeep, request: ChatRequest):
             prompt=request.prompt,
             system=request.system,
             thinking=request.thinking,
+            prompt_code=request.prompt_code,
         )
         return Execute.response({"response": result})
     except BusinessException:
@@ -88,8 +90,10 @@ async def chat(session: SessionDeep, request: ChatRequest):
 
 @router.post(
     "/chat/stream",
+    response_class=StreamingResponse,
     summary="通用流式对话（SSE，支持文件上传与联网搜索）",
     operation_id="aiChatStream",
+    responses={200: {"description": "SSE event stream", "content": {"text/event-stream": {}}}},
 )
 async def chat_stream(
     session: SessionDeep,
@@ -98,6 +102,7 @@ async def chat_stream(
     system: Optional[str] = Form(None, description="系统提示词，可选"),
     thinking: str = Form("false", description="是否开启思考模式（true/false）"),
     enable_search: bool = Form(False, description="是否开启联网搜索"),
+    prompt_code: Optional[str] = Form(None, description="可选的自定义提示词 code，需为非绑定、非全局默认的启用提示词"),
     files: Optional[List[UploadFile]] = File(default=None, description="可选，上传的文本类文件"),
 ):
     """通用流式对话：根据 model 路由到对应 Provider，输出统一 SSE 事件流。
@@ -187,6 +192,7 @@ async def chat_stream(
                     enable_search=enable_search,
                     file_context=file_context,
                     _config=config,
+                    prompt_code=prompt_code,
                 ),
                 per_chunk_timeout=_CHUNK_IDLE_TIMEOUT,
             ):

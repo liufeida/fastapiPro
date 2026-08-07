@@ -34,6 +34,11 @@ class PromptServices:
         if exists:
             raise BusinessException(code=400, message="该提示词代码已存在")
 
+        if data.model_code:
+            bound = await prompt_repository.is_model_code_bound(session, data.model_code)
+            if bound:
+                raise BusinessException(code=400, message="该模型已被其他提示词绑定")
+
         prompt_dict = data.model_dump()
         db_prompt = await prompt_repository.create(session, prompt_dict)
 
@@ -106,6 +111,14 @@ class PromptServices:
             )
             if exists:
                 raise BusinessException(code=400, message="该提示词代码已存在")
+
+        new_model_code = update_data.get("model_code")
+        if new_model_code:
+            bound = await prompt_repository.is_model_code_bound(
+                session, new_model_code, exclude_id=prompt_id
+            )
+            if bound:
+                raise BusinessException(code=400, message="该模型已被其他提示词绑定")
 
         new_is_default = update_data.get("is_default")
         if new_is_default:
