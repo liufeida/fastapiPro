@@ -124,8 +124,7 @@ async def chat_stream(
         f"thinking={thinking} -> {thinking_enabled}, enable_search={enable_search}"
     )
 
-    config = await ai_dispatcher.resolve(session, model)
-    ai_dispatcher.check_capability(config, thinking_enabled, enable_search)
+    config = None  # 由 dispatcher.chat_stream_with_tools 内部 resolve（带日志）
 
     file_context = await file_parser.parse_many(files) if files else None
 

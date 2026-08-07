@@ -31,6 +31,7 @@ class BusinessException(Exception):
     def __init__(
         self, code: int = 400, message: str = "请联系管理员", detail: Any = None
     ):
+        super().__init__(message)
         self.code = code
         self.message = message
         self.detail = detail

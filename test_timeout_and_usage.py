@@ -1,5 +1,5 @@
 """
-测试 _iter_with_chunk_timeout 超时机制 + AIChatLogger usage 收集
+测试 per-chunk 超时机制 + AI 日志 usage 收集 + 能力校验失败也写日志
 
 运行：.venv\\Scripts\\python.exe test_timeout_and_usage.py
 """
@@ -174,6 +174,84 @@ async def test_ai_logger_enqueue_writes_usage():
     return ok
 
 
+async def test_logger_start_accepts_model_code_string():
+    """start() 可以直接传 model_code 字符串（不需要先有 config）。"""
+    from app.services.ai_logger import AIChatLogger
+
+    logger = AIChatLogger()
+    logger.start("deepseek-chat", "你好", "你是测试助手")
+
+    ok = logger._model_code == "deepseek-chat" and logger._provider_code == ""
+    record(
+        "logger.start() 接受 model_code 字符串",
+        ok,
+        f"model_code={logger._model_code}, provider_code='{logger._provider_code}'",
+    )
+    return ok
+
+
+async def test_logger_bind_config_fills_provider_code():
+    """bind_config() 在 resolve 成功后补全 provider_code。"""
+    from app.services.ai_logger import AIChatLogger
+
+    logger = AIChatLogger()
+    logger.start("deepseek-chat", "你好", "你是测试助手")
+    logger.bind_config(_FakeConfig())
+
+    ok = logger._model_code == "deepseek-chat" and logger._provider_code == "deepseek"
+    record(
+        "logger.bind_config() 补全 provider_code",
+        ok,
+        f"model_code={logger._model_code}, provider_code={logger._provider_code}",
+    )
+    return ok
+
+
+async def test_capability_failure_is_logged():
+    """能力校验失败时，logger 要能记录 error 并 enqueue。"""
+    from app.services.ai_logger import AIChatLogger
+    from app.core.exceptions import BusinessException
+    from app.services.log_queue import log_queue, LOG_TYPE_AI
+
+    logger = AIChatLogger()
+    logger.start("flash-special", "你好", None)
+
+    captured: list[dict] = []
+    original_enqueue = log_queue.enqueue
+
+    def spy_enqueue(log_type: str, data: dict):
+        captured.append({"log_type": log_type, "data": data})
+
+    log_queue.enqueue = spy_enqueue
+    try:
+        try:
+            raise BusinessException(code=400, message="该模型不支持思考模式")
+        except BusinessException as e:
+            logger.record_error(f"{type(e).__name__}: {e.message}")
+            logger.enqueue()
+    finally:
+        log_queue.enqueue = original_enqueue
+
+    if not captured:
+        record("capability 失败写日志", False, "enqueue 未被调用")
+        return False
+
+    data = captured[0]["data"]
+    ok = (
+        data.get("model_code") == "flash-special"
+        and data.get("is_error") is True
+        and "不支持思考模式" in (data.get("error_message") or "")
+    )
+    record(
+        "capability 失败写日志",
+        ok,
+        f"model_code={data.get('model_code')}, "
+        f"is_error={data.get('is_error')}, "
+        f"error_message={data.get('error_message')}",
+    )
+    return ok
+
+
 class _FakeConfig:
     model_code = "deepseek-chat"
     provider_code = "deepseek"
@@ -183,7 +261,7 @@ class _FakeConfig:
 
 async def main():
     print("=" * 60)
-    print("测试: per-chunk 超时机制 + AI 日志 usage 收集")
+    print("测试: 超时机制 + usage 收集 + 能力校验失败写日志")
     print("=" * 60)
 
     await test_normal_iteration_ok()
@@ -191,6 +269,9 @@ async def main():
     await test_timeout_on_first_chunk_stuck()
     await test_ai_logger_records_usage()
     await test_ai_logger_enqueue_writes_usage()
+    await test_logger_start_accepts_model_code_string()
+    await test_logger_bind_config_fills_provider_code()
+    await test_capability_failure_is_logged()
 
     print()
     passed = sum(1 for r in results if r["passed"])

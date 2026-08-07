@@ -14,6 +14,14 @@ from app.services.prompt_cache import prompt_cache
 logger = logging.getLogger(__name__)
 
 
+def _format_exception(exc: Exception) -> str:
+    """统一格式化异常信息，确保 BusinessException 的 code/message 都能展示。"""
+    from app.core.exceptions import BusinessException
+    if isinstance(exc, BusinessException):
+        return f"{type(exc).__name__}(code={exc.code}): {exc.message}"
+    return f"{type(exc).__name__}: {exc}"
+
+
 def _build_identity_system(config: AIModelConfig, user_system: Optional[str]) -> str:
     """拼接身份系统提示词。
 
@@ -72,22 +80,24 @@ class AIDispatcher:
         thinking: bool = False,
     ) -> str:
         """通用非流式对话。"""
-        config = await self.resolve(session, model_code)
-        self.check_capability(config, thinking, enable_search=False)
-        provider = provider_registry.get(config.provider_code)
-        system = _build_identity_system(config, system)
-        logger.info(f"AI 调度: model={model_code}, provider={config.provider_code}, thinking={thinking}")
-
         from app.services.ai_logger import AIChatLogger
         ai_logger = AIChatLogger()
-        ai_logger.start(config, prompt, system)
+        ai_logger.start(model_code, prompt, system)
 
         try:
-            result = await provider.chat(config, prompt, system, thinking)
+            config = await self.resolve(session, model_code)
+            self.check_capability(config, thinking, enable_search=False)
+            ai_logger.bind_config(config)
+            provider = provider_registry.get(config.provider_code)
+            system_prompt = _build_identity_system(config, system)
+            ai_logger._system_prompt = system_prompt
+            logger.info(f"AI 调度: model={model_code}, provider={config.provider_code}, thinking={thinking}")
+
+            result = await provider.chat(config, prompt, system_prompt, thinking)
             ai_logger.record_content(result)
             return result
         except Exception as exc:
-            ai_logger.record_error(f"{type(exc).__name__}: {str(exc)}")
+            ai_logger.record_error(_format_exception(exc))
             raise
         finally:
             ai_logger.enqueue()
@@ -107,27 +117,31 @@ class AIDispatcher:
 
         _config 参数供路由层预校验后传入，避免重复查库。
         """
-        config = _config if _config is not None else await self.resolve(session, model_code)
-        self.check_capability(config, thinking, enable_search)
-        provider = provider_registry.get(config.provider_code)
-        system = _build_identity_system(config, system)
-        logger.info(
-            f"AI 流式调度: model={model_code}, provider={config.provider_code}, "
-            f"thinking={thinking}, enable_search={enable_search}"
-        )
-
         from app.services.ai_logger import AIChatLogger, wrap_stream_for_logging
         ai_logger = AIChatLogger()
-        ai_logger.start(config, prompt, system)
+        ai_logger.start(model_code, prompt, system)
 
+        config = _config
         try:
+            if config is None:
+                config = await self.resolve(session, model_code)
+            self.check_capability(config, thinking, enable_search)
+            ai_logger.bind_config(config)
+            provider = provider_registry.get(config.provider_code)
+            system_prompt = _build_identity_system(config, system)
+            ai_logger._system_prompt = system_prompt
+            logger.info(
+                f"AI 流式调度: model={model_code}, provider={config.provider_code}, "
+                f"thinking={thinking}, enable_search={enable_search}"
+            )
+
             chunk_iter = provider.chat_stream_with_tools(
-                config, prompt, system, thinking, enable_search, file_context
+                config, prompt, system_prompt, thinking, enable_search, file_context
             )
             async for chunk in wrap_stream_for_logging(chunk_iter, ai_logger):
                 yield chunk
         except Exception as exc:
-            ai_logger.record_error(f"{type(exc).__name__}: {str(exc)}")
+            ai_logger.record_error(_format_exception(exc))
             ai_logger.enqueue()
             raise
 

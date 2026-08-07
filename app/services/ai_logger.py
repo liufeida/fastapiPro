@@ -29,17 +29,32 @@ class AIChatLogger:
         self._input_tokens: int | None = None
         self._output_tokens: int | None = None
 
-    def start(self, config, prompt: str, system: str) -> None:
-        """开始记录一次 AI 调用。"""
+    def start(self, model_code_or_config, prompt: str, system: str) -> None:
+        """开始记录一次 AI 调用。
+
+        Args:
+            model_code_or_config: AIModelConfig 实例或 model_code 字符串。
+                传字符串时 provider_code 为空，后续可通过 bind_config 补全。
+        """
+        from app.models.ai_model_config import AIModelConfig
         self._user_prompt = prompt or ""
         self._system_prompt = system or ""
-        self._model_code = config.model_code
-        self._provider_code = config.provider_code
+        if isinstance(model_code_or_config, AIModelConfig):
+            self._model_code = model_code_or_config.model_code
+            self._provider_code = model_code_or_config.provider_code
+        else:
+            self._model_code = str(model_code_or_config)
+            self._provider_code = ""
         self._start_time = time.perf_counter()
         self._messages_str = json.dumps(
             [{"role": "system", "content": self._system_prompt}, {"role": "user", "content": self._user_prompt}],
             ensure_ascii=False,
         )
+
+    def bind_config(self, config) -> None:
+        """resolve 成功后补全 provider_code 等配置字段。"""
+        self._model_code = config.model_code
+        self._provider_code = config.provider_code
 
     def record_content(self, chunk: str) -> None:
         if chunk:
@@ -109,7 +124,12 @@ async def wrap_stream_for_logging(
                     logger.record_usage(chunk.prompt_tokens, chunk.completion_tokens)
             yield chunk
     except Exception as exc:
-        logger.record_error(f"{type(exc).__name__}: {str(exc)}")
+        from app.core.exceptions import BusinessException
+        if isinstance(exc, BusinessException):
+            msg = f"{type(exc).__name__}(code={exc.code}): {exc.message}"
+        else:
+            msg = f"{type(exc).__name__}: {exc}"
+        logger.record_error(msg)
         raise
     finally:
         logger.enqueue()
