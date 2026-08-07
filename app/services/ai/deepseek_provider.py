@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 _HTTPX_STREAM_TIMEOUT = httpx.Timeout(
     connect=30.0,
-    read=None,        # streaming 模式下不做 chunk 间隔超时（模型 thinking 阶段可能长时间无数据）
+    read=180.0,
     write=30.0,
     pool=30.0,
 )

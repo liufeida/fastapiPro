@@ -1,6 +1,7 @@
+import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import AsyncIterator, List, Optional
 
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
@@ -17,6 +18,24 @@ from app.services.file_parser import file_parser
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_CHUNK_IDLE_TIMEOUT = 180.0
+
+
+async def _iter_with_chunk_timeout(aiter: AsyncIterator, per_chunk_timeout: float):
+    """迭代 async iterator，每个 chunk 独立超时保护。"""
+    aiter = aiter.__aiter__()
+    loop = asyncio.get_running_loop()
+    while True:
+        next_task = loop.create_task(aiter.__anext__())
+        try:
+            item = await asyncio.wait_for(next_task, timeout=per_chunk_timeout)
+            yield item
+        except asyncio.TimeoutError:
+            next_task.cancel()
+            raise
+        except StopAsyncIteration:
+            break
 
 
 class ChatRequest(BaseModel):
@@ -159,15 +178,18 @@ async def chat_stream(
                 })
 
         try:
-            async for chunk in ai_dispatcher.chat_stream_with_tools(
-                session,
-                model_code=model,
-                prompt=prompt,
-                system=system,
-                thinking=thinking_enabled,
-                enable_search=enable_search,
-                file_context=file_context,
-                _config=config,
+            async for chunk in _iter_with_chunk_timeout(
+                ai_dispatcher.chat_stream_with_tools(
+                    session,
+                    model_code=model,
+                    prompt=prompt,
+                    system=system,
+                    thinking=thinking_enabled,
+                    enable_search=enable_search,
+                    file_context=file_context,
+                    _config=config,
+                ),
+                per_chunk_timeout=_CHUNK_IDLE_TIMEOUT,
             ):
                 if isinstance(chunk, StreamEvent):
                     if chunk.type == "thinking":
@@ -242,6 +264,20 @@ async def chat_stream(
             })
             yield build_sse("Done", {})
 
+        except asyncio.TimeoutError:
+            logger.warning(f"AI 流式对话超时: model={model}, idle_timeout={_CHUNK_IDLE_TIMEOUT}s")
+            for _x in _finish_content():
+                yield _x
+            for _x in _finish_thinking():
+                yield _x
+            yield build_sse("error", {"message": "模型请求超时，请重试", "code": 504})
+            elapsed_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+            yield build_sse("end", {
+                "stop_reason": "error",
+                "request_id": request_id,
+                "elapsed_ms": elapsed_ms,
+            })
+            yield build_sse("Done", {})
         except BusinessException as e:
             for _x in _finish_content():
                 yield _x
