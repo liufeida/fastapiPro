@@ -7,6 +7,9 @@ from alembic import context
 from app.models.ai_model_config import AIModelConfig
 from app.models.ai_chat_log import AIChatLog
 from app.models.api_access_log import ApiAccessLog
+from app.models.chat_conversation import ChatConversation
+from app.models.chat_message import ChatMessage
+from app.models.chat_message_attachment import ChatMessageAttachment
 from app.models.files import File
 from app.models.prompt import SystemPrompt
 from app.models.users import Users

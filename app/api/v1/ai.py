@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 from typing import AsyncIterator, List, Optional
@@ -13,6 +14,7 @@ from app.services.ai.base import StreamEvent, ToolEvent
 from app.services.ai.dispatcher import ai_dispatcher
 from app.services.ai.registry import provider_registry
 from app.services.ai.sse import build_sse
+from app.services.chat_conversation import chat_conversation_service
 from app.services.file_parser import file_parser
 
 logger = logging.getLogger(__name__)
@@ -45,6 +47,8 @@ class ChatRequest(BaseModel):
     system: Optional[str] = None
     thinking: bool = False
     prompt_code: Optional[str] = None
+    conversation_id: Optional[str] = None
+    user_id: Optional[str] = None
 
 
 @router.get(
@@ -73,6 +77,23 @@ async def health_check(session: SessionDeep):
 async def chat(session: SessionDeep, request: ChatRequest):
     """通用非流式对话，根据 model 路由到对应 Provider。"""
     try:
+        conv = None
+        if request.conversation_id or True:
+            conv = await chat_conversation_service.ensure_conversation(
+                session,
+                conversation_id=request.conversation_id,
+                user_id=request.user_id,
+                model_code=request.model,
+                first_prompt=request.prompt[:30],
+            )
+
+        await chat_conversation_service.save_user_message(
+            session,
+            conversation_id=conv.id,
+            user_content=request.prompt,
+            model_code=request.model,
+        )
+
         result = await ai_dispatcher.chat(
             session,
             model_code=request.model,
@@ -80,8 +101,21 @@ async def chat(session: SessionDeep, request: ChatRequest):
             system=request.system,
             thinking=request.thinking,
             prompt_code=request.prompt_code,
+            conversation_id=conv.id,
         )
-        return Execute.response({"response": result})
+
+        try:
+            await chat_conversation_service.save_assistant_message(
+                session,
+                conversation_id=conv.id,
+                assistant_content=result,
+                thinking_content=None,
+                model_code=request.model,
+            )
+        except Exception as persist_err:
+            logger.warning(f"assistant 消息持久化失败: {persist_err}")
+
+        return Execute.response({"response": result, "conversation_id": conv.id})
     except BusinessException:
         raise
     except Exception as e:
@@ -103,6 +137,9 @@ async def chat_stream(
     thinking: str = Form("false", description="是否开启思考模式（true/false）"),
     enable_search: bool = Form(False, description="是否开启联网搜索"),
     prompt_code: Optional[str] = Form(None, description="可选的自定义提示词 code，需为非绑定、非全局默认的启用提示词"),
+    conversation_id: Optional[str] = Form(None, description="可选，已有会话 ID；不传则自动创建新会话"),
+    user_id: Optional[str] = Form(None),
+    attachment_ids: Optional[str] = Form(None, description="可选，附件 ID 数组 JSON 字符串，挂载在 user 消息上"),
     files: Optional[List[UploadFile]] = File(default=None, description="可选，上传的文本类文件"),
 ):
     """通用流式对话：根据 model 路由到对应 Provider，输出统一 SSE 事件流。
@@ -129,9 +166,45 @@ async def chat_stream(
         f"thinking={thinking} -> {thinking_enabled}, enable_search={enable_search}"
     )
 
-    config = None  # 由 dispatcher.chat_stream_with_tools 内部 resolve（带日志）
+    config = None
 
     file_context = await file_parser.parse_many(files) if files else None
+
+    conv = await chat_conversation_service.ensure_conversation(
+        session,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        model_code=model,
+        first_prompt=prompt[:30],
+    )
+    conv_id = conv.id
+
+    user_msg_id = await chat_conversation_service.save_user_message(
+        session,
+        conversation_id=conv_id,
+        user_content=prompt,
+        model_code=model,
+    )
+
+    if attachment_ids:
+        try:
+            ids = json.loads(attachment_ids)
+            if isinstance(ids, list) and ids:
+                from app.repository.chat_message_attachment import chat_message_attachment_repository
+                for fid in ids:
+                    try:
+                        await chat_message_attachment_repository.create(session, {
+                            "message_id": user_msg_id,
+                            "file_id": fid,
+                            "url": "",
+                            "filename": "",
+                            "content_type": "",
+                            "type": "file",
+                        })
+                    except Exception as att_err:
+                        logger.warning(f"附件关联失败 file_id={fid}: {att_err}")
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(f"attachment_ids 格式错误: {attachment_ids}")
 
     async def _event_generator():
         import uuid
@@ -159,6 +232,7 @@ async def chat_stream(
             "thinking": thinking_enabled,
             "enable_search": enable_search,
             "timestamp": start_time.isoformat(),
+            "conversation_id": conv_id,
         })
 
         def _finish_thinking():
@@ -193,6 +267,7 @@ async def chat_stream(
                     file_context=file_context,
                     _config=config,
                     prompt_code=prompt_code,
+                    conversation_id=conv_id,
                 ),
                 per_chunk_timeout=_CHUNK_IDLE_TIMEOUT,
             ):
@@ -267,6 +342,20 @@ async def chat_stream(
                 "request_id": request_id,
                 "elapsed_ms": elapsed_ms,
             })
+
+            try:
+                await chat_conversation_service.save_assistant_message(
+                    session,
+                    conversation_id=conv_id,
+                    assistant_content="".join(content_parts),
+                    thinking_content="".join(thinking_parts) or None,
+                    tokens_input=usage_data.get("prompt_tokens"),
+                    tokens_output=usage_data.get("completion_tokens"),
+                    model_code=model,
+                )
+            except Exception as persist_err:
+                logger.warning(f"assistant 消息持久化失败: {persist_err}")
+
             yield build_sse("Done", {})
 
         except asyncio.TimeoutError:

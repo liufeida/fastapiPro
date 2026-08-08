@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.api.v1 import ai, ai_model_config, auth, deepseek, files, logs, ollama, prompts, users
+from app.api.v1 import ai, ai_model_config, auth, chat_conversations, deepseek, files, logs, ollama, prompts, users
 from app.core.security import get_current_user
 
 router = APIRouter()
@@ -14,19 +14,26 @@ router.include_router(
     responses={404: {"description": "Not found"}},
     **params,
 )
+# router.include_router(
+#     ollama.router,
+#     prefix="/ollama",
+#     tags=["Ollama"],
+#     # dependencies=[Depends(get_current_user)],
+#     responses={404: {"description": "Not found"}},
+#     **params,
+# )
 router.include_router(
-    ollama.router,
-    prefix="/ollama",
-    tags=["Ollama"],
+    ai.router,
+    prefix="/ai",
+    tags=["AI Stream"],
     # dependencies=[Depends(get_current_user)],
     responses={404: {"description": "Not found"}},
     **params,
 )
 router.include_router(
-    ai.router,
-    prefix="/ai",
-    tags=["AI"],
-    # dependencies=[Depends(get_current_user)],
+    chat_conversations.router,
+    prefix="/conversations",
+    tags=["AI Chat Conversations"],
     responses={404: {"description": "Not found"}},
     **params,
 )
@@ -38,14 +45,14 @@ router.include_router(
     responses={404: {"description": "Not found"}},
     **params,
 )
-router.include_router(
-    deepseek.router,
-    prefix="/deepseek",
-    tags=["DeepSeek"],
-    # dependencies=[Depends(get_current_user)],
-    responses={404: {"description": "Not found"}},
-    **params,
-)
+# router.include_router(
+#     deepseek.router,
+#     prefix="/deepseek",
+#     tags=["DeepSeek"],
+#     # dependencies=[Depends(get_current_user)],
+#     responses={404: {"description": "Not found"}},
+#     **params,
+# )
 router.include_router(
     users.router,
     prefix="/users",

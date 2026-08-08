@@ -89,19 +89,34 @@ class AIProvider(ABC):
     config 参数类型使用 TYPE_CHECKING 延迟导入，避免循环依赖。
     config 为 app.models.ai_model_config.AIModelConfig 实例，包含
     provider_code、api_key、base_url、model_name 等运行时配置。
+
+    messages 参数（可选）：
+        当 messages 不为 None 时，直接使用该消息列表（多轮对话 / 外部组装场景）；
+        否则由 prompt + system 内部走 _build_messages 组装成单轮消息列表。
+        所有实现类必须保持 messages=None 时的行为与改动前完全一致。
     """
 
     @abstractmethod
-    async def chat(self, config, prompt: str, system: Optional[str] = None, thinking: bool = False) -> str:
-        """非流式对话，返回完整回复。"""
+    async def chat(self, config, prompt: str, system: Optional[str] = None, messages: Optional[list[dict]] = None, thinking: bool = False) -> str:
+        """非流式对话，返回完整回复。
+
+        messages 不为 None 时直接使用，否则用 prompt + system 走 _build_messages 路径。
+        """
         ...
 
     @abstractmethod
-    async def chat_stream(self, config, prompt: str, system: Optional[str] = None, thinking: bool = False) -> AsyncIterator[StreamChunk]:
-        """流式对话，逐块返回内容。开启 thinking 时会先输出思考内容。"""
+    async def chat_stream(self, config, prompt: str, system: Optional[str] = None, messages: Optional[list[dict]] = None, thinking: bool = False) -> AsyncIterator[StreamChunk]:
+        """流式对话，逐块返回内容。开启 thinking 时会先输出思考内容。
+
+        messages 不为 None 时直接使用，否则用 prompt + system 走 _build_messages 路径。
+        """
         ...
 
     @abstractmethod
-    async def chat_stream_with_tools(self, config, prompt: str, system: Optional[str] = None, thinking: bool = False, enable_search: bool = False, file_context: Optional[str] = None) -> AsyncIterator[StreamChunk]:
-        """增强版流式对话：支持文件上下文与联网搜索工具调用循环。"""
+    async def chat_stream_with_tools(self, config, prompt: str, system: Optional[str] = None, messages: Optional[list[dict]] = None, thinking: bool = False, enable_search: bool = False, file_context: Optional[str] = None) -> AsyncIterator[StreamChunk]:
+        """增强版流式对话：支持文件上下文与联网搜索工具调用循环。
+
+        messages 不为 None 时直接使用（file_context 已由外部拼入），
+        否则用 prompt + system + file_context 走 _build_messages 路径。
+        """
         ...

@@ -198,17 +198,20 @@ class QwenProvider(AIProvider):
         return chunk.additional_kwargs.get("reasoning_content")
 
     async def chat(
-        self, config, prompt: str, system: Optional[str] = None, thinking: bool = False
+        self, config, prompt: str, system: Optional[str] = None, messages: Optional[list[dict]] = None, thinking: bool = False
     ) -> str:
-        messages = self._build_messages(prompt, system)
+        if messages is not None:
+            final_messages = messages
+        else:
+            final_messages = self._build_messages(prompt, system)
         if thinking:
             parts: list[str] = []
-            async for chunk in self._stream_raw(config, messages, thinking=True):
+            async for chunk in self._stream_raw(config, final_messages, thinking=True):
                 if isinstance(chunk, str):
                     parts.append(chunk)
             return "".join(parts)
         llm = self._get_llm(config, streaming=False, thinking=False)
-        lc_messages = self._to_langchain_messages(messages)
+        lc_messages = self._to_langchain_messages(final_messages)
         response = llm.invoke(lc_messages)
         return response.content
 
@@ -217,15 +220,19 @@ class QwenProvider(AIProvider):
         config,
         prompt: str,
         system: Optional[str] = None,
+        messages: Optional[list[dict]] = None,
         thinking: bool = False,
     ) -> AsyncIterator[StreamChunk]:
-        messages = self._build_messages(prompt, system)
+        if messages is not None:
+            final_messages = messages
+        else:
+            final_messages = self._build_messages(prompt, system)
         if thinking:
-            async for chunk in self._stream_raw(config, messages, thinking=True):
+            async for chunk in self._stream_raw(config, final_messages, thinking=True):
                 yield chunk
             return
         llm = self._get_llm(config, streaming=True, thinking=False)
-        lc_messages = self._to_langchain_messages(messages)
+        lc_messages = self._to_langchain_messages(final_messages)
         last_chunk = None
         async for chunk in llm.astream(lc_messages):
             last_chunk = chunk
@@ -248,19 +255,23 @@ class QwenProvider(AIProvider):
         config,
         prompt: str,
         system: Optional[str] = None,
+        messages: Optional[list[dict]] = None,
         thinking: bool = False,
         enable_search: bool = False,
         file_context: Optional[str] = None,
     ) -> AsyncIterator[StreamChunk]:
-        messages = self._build_messages(prompt, system, file_context)
+        if messages is not None:
+            final_messages = messages
+        else:
+            final_messages = self._build_messages(prompt, system, file_context)
 
         if not enable_search:
             if thinking:
-                async for chunk in self._stream_raw(config, messages, thinking=True):
+                async for chunk in self._stream_raw(config, final_messages, thinking=True):
                     yield chunk
             else:
                 llm = self._get_llm(config, streaming=True, thinking=False)
-                lc_messages = self._to_langchain_messages(messages)
+                lc_messages = self._to_langchain_messages(final_messages)
                 last_chunk = None
                 async for chunk in llm.astream(lc_messages):
                     last_chunk = chunk
@@ -279,7 +290,7 @@ class QwenProvider(AIProvider):
                     )
             return
 
-        lc_messages = self._to_langchain_messages(messages)
+        lc_messages = self._to_langchain_messages(final_messages)
         llm = self._get_llm(config, streaming=False, thinking=False)
         llm_with_tools = llm.bind_tools([web_search])
 

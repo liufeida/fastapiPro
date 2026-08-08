@@ -210,18 +210,21 @@ class DeepSeekProvider(AIProvider):
         return chunk.additional_kwargs.get("reasoning_content")
 
     async def chat(
-        self, config, prompt: str, system: Optional[str] = None, thinking: bool = False
+        self, config, prompt: str, system: Optional[str] = None, messages: Optional[list[dict]] = None, thinking: bool = False
     ) -> str:
         """非流式对话，返回完整回复。"""
-        messages = self._build_messages(prompt, system)
+        if messages is not None:
+            final_messages = messages
+        else:
+            final_messages = self._build_messages(prompt, system)
         if thinking:
             parts: list[str] = []
-            async for chunk in self._stream_raw(config, messages, thinking=True):
+            async for chunk in self._stream_raw(config, final_messages, thinking=True):
                 if isinstance(chunk, str):
                     parts.append(chunk)
             return "".join(parts)
         llm = self._get_llm(config, streaming=False, thinking=False)
-        lc_messages = self._to_langchain_messages(messages)
+        lc_messages = self._to_langchain_messages(final_messages)
         response = llm.invoke(lc_messages)
         return response.content
 
@@ -230,16 +233,20 @@ class DeepSeekProvider(AIProvider):
         config,
         prompt: str,
         system: Optional[str] = None,
+        messages: Optional[list[dict]] = None,
         thinking: bool = False,
     ) -> AsyncIterator[StreamChunk]:
         """流式对话，逐块返回内容。开启 thinking 时会先输出思考内容。"""
-        messages = self._build_messages(prompt, system)
+        if messages is not None:
+            final_messages = messages
+        else:
+            final_messages = self._build_messages(prompt, system)
         if thinking:
-            async for chunk in self._stream_raw(config, messages, thinking=True):
+            async for chunk in self._stream_raw(config, final_messages, thinking=True):
                 yield chunk
             return
         llm = self._get_llm(config, streaming=True, thinking=False)
-        lc_messages = self._to_langchain_messages(messages)
+        lc_messages = self._to_langchain_messages(final_messages)
         last_chunk = None
         async for chunk in llm.astream(lc_messages):
             last_chunk = chunk
@@ -262,6 +269,7 @@ class DeepSeekProvider(AIProvider):
         config,
         prompt: str,
         system: Optional[str] = None,
+        messages: Optional[list[dict]] = None,
         thinking: bool = False,
         enable_search: bool = False,
         file_context: Optional[str] = None,
@@ -272,16 +280,19 @@ class DeepSeekProvider(AIProvider):
         - enable_search=True: LangChain bind_tools 工具循环
         - 工具循环耗尽后强制输出最终回答，确保 SSE 流完整
         """
-        messages = self._build_messages(prompt, system, file_context)
+        if messages is not None:
+            final_messages = messages
+        else:
+            final_messages = self._build_messages(prompt, system, file_context)
 
         # 关闭搜索：退化为纯流式
         if not enable_search:
             if thinking:
-                async for chunk in self._stream_raw(config, messages, thinking=True):
+                async for chunk in self._stream_raw(config, final_messages, thinking=True):
                     yield chunk
             else:
                 llm = self._get_llm(config, streaming=True, thinking=False)
-                lc_messages = self._to_langchain_messages(messages)
+                lc_messages = self._to_langchain_messages(final_messages)
                 last_chunk = None
                 async for chunk in llm.astream(lc_messages):
                     last_chunk = chunk
@@ -302,7 +313,7 @@ class DeepSeekProvider(AIProvider):
 
         # 开启搜索：绑定 web_search 工具
         # 工具循环用 LangChain（thinking=false，不依赖 reasoning_content）
-        lc_messages = self._to_langchain_messages(messages)
+        lc_messages = self._to_langchain_messages(final_messages)
         llm = self._get_llm(config, streaming=False, thinking=False)
         llm_with_tools = llm.bind_tools([web_search])
 

@@ -109,6 +109,8 @@ class AIDispatcher:
         system: Optional[str] = None,
         thinking: bool = False,
         prompt_code: str | None = None,
+        conversation_id: str | None = None,
+        file_context: Optional[str] = None,
     ) -> str:
         """通用非流式对话。"""
         from app.services.ai_logger import AIChatLogger
@@ -127,7 +129,22 @@ class AIDispatcher:
             ai_logger._system_prompt = system_prompt
             logger.info(f"AI 调度: model={model_code}, provider={config.provider_code}, thinking={thinking}")
 
-            result = await provider.chat(config, prompt, system_prompt, thinking)
+            messages_to_pass = None
+            if conversation_id:
+                from app.services.chat_context import build_messages_for_provider
+                messages_to_pass = await build_messages_for_provider(
+                    session,
+                    conversation_id,
+                    system_prompt,
+                    prompt,
+                    file_context,
+                )
+
+            result = await provider.chat(
+                config, prompt, system_prompt,
+                messages=messages_to_pass,
+                thinking=thinking,
+            )
             ai_logger.record_content(result)
             return result
         except Exception as exc:
@@ -147,6 +164,7 @@ class AIDispatcher:
         file_context: Optional[str] = None,
         _config: Optional[AIModelConfig] = None,
         prompt_code: str | None = None,
+        conversation_id: str | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """通用流式对话（含工具调用）。
 
@@ -173,8 +191,23 @@ class AIDispatcher:
                 f"thinking={thinking}, enable_search={enable_search}"
             )
 
+            messages_to_pass = None
+            if conversation_id:
+                from app.services.chat_context import build_messages_for_provider
+                messages_to_pass = await build_messages_for_provider(
+                    session,
+                    conversation_id,
+                    system_prompt,
+                    prompt,
+                    file_context,
+                )
+
             chunk_iter = provider.chat_stream_with_tools(
-                config, prompt, system_prompt, thinking, enable_search, file_context
+                config, prompt, system_prompt,
+                messages=messages_to_pass,
+                thinking=thinking,
+                enable_search=enable_search,
+                file_context=file_context,
             )
             async for chunk in wrap_stream_for_logging(chunk_iter, ai_logger):
                 yield chunk
