@@ -175,7 +175,7 @@ async def chat_stream(
         conversation_id=conversation_id,
         user_id=user_id,
         model_code=model,
-        first_prompt=prompt[:30],
+        first_prompt=prompt[:10],
     )
     conv_id = conv.id
 
@@ -274,6 +274,7 @@ async def chat_stream(
                 if isinstance(chunk, StreamEvent):
                     if chunk.type == "thinking":
                         for _x in _finish_content():
+                            # 把已经取到的值，继续抛给最终调用者
                             yield _x
                         if not thinking_started:
                             thinking_started = True

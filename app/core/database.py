@@ -17,9 +17,10 @@ engine = create_async_engine(DATABASE_URL, echo=False)
 # 创建异步会话工厂
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-
-# 依赖注入：获取数据库会话
 async def get_async_session():
+    '''
+        依赖注入：获取数据库会话
+    '''
     async with AsyncSessionLocal() as session:
         yield session
 

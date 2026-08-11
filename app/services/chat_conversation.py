@@ -68,7 +68,7 @@ class ChatConversationService:
                 return conv
         auto_title = None
         if first_prompt:
-            auto_title = first_prompt[:30]
+            auto_title = first_prompt[:10]
         return await self.create_conversation(
             session,
             user_id=user_id,

@@ -186,10 +186,6 @@ class AIDispatcher:
                 extra_prompt = await self._load_optional_prompt(session, prompt_code)
             system_prompt = _build_identity_system(config, system, extra_prompt)
             ai_logger._system_prompt = system_prompt
-            logger.info(
-                f"AI 流式调度: model={model_code}, provider={config.provider_code}, "
-                f"thinking={thinking}, enable_search={enable_search}"
-            )
 
             messages_to_pass = None
             if conversation_id:
