@@ -8,8 +8,8 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
+from app.models.common import PageResult
 from app.models.users import (
-    PageResult,
     QueryRequest,
     Users,
     UsersCreate,

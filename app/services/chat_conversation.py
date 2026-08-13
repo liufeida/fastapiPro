@@ -1,8 +1,18 @@
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.chat_conversation import ChatConversation
+from app.core.exceptions import BusinessException
+from app.models.chat_message import ChatMessageReo
+from app.models.common import PageResult
+from app.models.chat_conversation import (
+    ChatConversation,
+    ChatConversationCreate,
+    ChatConversationReo,
+    ChatConversationUpdate,
+    QueryRequest,
+)
 from app.repository.chat_conversation import chat_conversation_repository
 from app.repository.chat_message import chat_message_repository
+from app.repository.chat_message_attachment import chat_message_attachment_repository
 
 
 class ChatConversationService:
@@ -11,9 +21,7 @@ class ChatConversationService:
     async def create_conversation(
         self,
         session: AsyncSession,
-        user_id: str | None = None,
-        model_code: str | None = None,
-        initial_title: str | None = None,
+        data: ChatConversationCreate,
     ) -> ChatConversation:
         """创建新会话。
 
@@ -26,13 +34,79 @@ class ChatConversationService:
         Returns:
             创建好的 ChatConversation 对象。
         """
-        title = initial_title or "新对话"
+        title = data.title or "新对话"
         data: dict = {"title": title}
-        if user_id is not None:
-            data["user_id"] = user_id
-        if model_code is not None:
-            data["model_code"] = model_code
-        return await chat_conversation_repository.create(session, data)
+        if data.user_id is not None:
+            data["user_id"] = data.user_id
+        if data.model_code is not None:
+            data["model_code"] = data.model_code
+        _data = await chat_conversation_repository.create(session, data)
+        return ChatConversationReo.model_validate(_data)
+
+    async def get_conversation_by_id(self, session: AsyncSession, conv_id: str) -> dict:
+        """根据会话 ID 查询会话详情。
+
+        Args:
+            session: 数据库会话。
+            conv_id: 会话 ID。
+
+        Returns:
+            会话详情。
+        """
+        conv = await chat_conversation_repository.get_by_id(session, conv_id)
+        if not conv or conv.is_deleted:
+            raise BusinessException(code=404, message="会话不存在")
+        messages = await chat_message_repository.list_by_conversation(session, conv_id)
+        msg_ids = [m.id for m in messages]
+        att_map = (
+            await chat_message_attachment_repository.list_by_message_ids(
+                session, msg_ids
+            )
+            if msg_ids
+            else {}
+        )
+        msg_reos = []
+        for m in messages:
+            reo = ChatMessageReo.model_validate(m)
+            reo.attachments = [
+                {
+                    "id": att.id,
+                    "file_id": att.file_id,
+                    "url": att.url,
+                    "filename": att.filename,
+                    "content_type": att.content_type,
+                    "type": att.type,
+                }
+                for att in att_map.get(m.id, [])
+            ]
+            msg_reos.append(reo)
+
+        conv_reo = ChatConversationReo.model_validate(conv)
+        return {**conv_reo.model_dump(), "messages": msg_reos}
+
+    async def get_conversation_list(
+        self, session: AsyncSession, query: QueryRequest
+    ) -> PageResult[ChatConversationReo]:
+        """获取历史会话分页列表。"""
+
+        filters = query.to_repository_filters()
+
+        conversations_list = await chat_conversation_repository.list_paginated(
+            session,
+            offset=query.offset,
+            limit=query.limit,
+            **filters,
+        )
+        total = await chat_conversation_repository.count(session, **filters)
+        pages = (total + query.pageSize - 1) // query.pageSize if total > 0 else 0
+
+        return PageResult(
+            records=conversations_list,
+            total=total,
+            page=query.page,
+            pageSize=query.pageSize,
+            pages=pages,
+        )
 
     async def ensure_conversation(
         self,
@@ -58,7 +132,9 @@ class ChatConversationService:
             已存在或新创建的 ChatConversation 对象。
         """
         if conversation_id:
-            conv = await chat_conversation_repository.get_by_id(session, conversation_id)
+            conv = await chat_conversation_repository.get_by_id(
+                session, conversation_id
+            )
             if conv:
                 if model_code and conv.model_code != model_code:
                     await chat_conversation_repository.update_model_code(
@@ -76,17 +152,35 @@ class ChatConversationService:
             initial_title=auto_title,
         )
 
-    async def soft_delete(
-        self, session: AsyncSession, conversation_id: str
-    ) -> bool:
-        """软删除会话。"""
-        return await chat_conversation_repository.soft_delete(session, conversation_id)
+    async def soft_delete_by_id(
+        self, session: AsyncSession, conv_id: str
+    ) -> ChatConversationReo:
+        """根据会话 id 软删除会话。"""
+        ok = await chat_conversation_repository.soft_delete(session, conv_id)
+        if not ok:
+            raise BusinessException(code=404, message="会话不存在")
 
-    async def rename(
-        self, session: AsyncSession, conversation_id: str, title: str
-    ) -> bool:
-        """重命名会话。"""
-        return await chat_conversation_repository.rename(session, conversation_id, title)
+        conv_updated_data = await chat_conversation_repository.get_by_id(
+            session, conv_id
+        )
+        return ChatConversationReo.model_validate(conv_updated_data)
+
+    async def rename_conversation_by_id(
+        self, session: AsyncSession, conv_id: str, data: ChatConversationUpdate
+    ) -> ChatConversationReo | None:
+        """根据会话 id 重命名会话。"""
+        conv = await chat_conversation_repository.get_by_id(session, conv_id)
+        if not conv or conv.is_deleted:
+            raise BusinessException(code=404, message="会话不存在")
+        if not data.title:
+            raise BusinessException(code=400, message="标题不能为空")
+        ok = await chat_conversation_repository.rename(session, conv_id, data.title)
+        if not ok:
+            raise BusinessException(code=400, message="重命名失败")
+        conv_updated_data = await chat_conversation_repository.get_by_id(
+            session, conv_id
+        )
+        return ChatConversationReo.model_validate(conv_updated_data)
 
     async def save_user_message(
         self,

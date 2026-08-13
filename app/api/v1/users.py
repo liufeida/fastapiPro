@@ -5,8 +5,8 @@ from fastapi import APIRouter, Body, Depends, Query
 from app.api.dependencies import SessionDeep
 from app.core.exceptions import Execute
 from app.core.security import get_current_active_user, get_current_user
+from app.models.common import PageResult
 from app.models.users import (
-    PageResult,
     QueryRequest,
     Users,
     UsersCreate,

@@ -5,6 +5,8 @@ from typing import Generic, TypeVar
 from pydantic import ConfigDict
 from sqlmodel import Column, DateTime, Field, SQLModel
 
+from app.models.common import PageParams
+
 
 class FileBase(SQLModel):
     """文件元数据基类."""
@@ -40,30 +42,6 @@ class FileOut(FileBase):
     created_at: datetime
 
 
-class PageParams(SQLModel):
-    """通用分页参数。"""
-
-    page: int = Field(default=1, ge=1, description="页码，从 1 开始")
-    pageSize: int = Field(
-        default=10,
-        ge=1,
-        le=100,
-        description="每页条数，默认 10，最大 100",
-    )
-
-    @property
-    def offset(self) -> int:
-        """将页码转换为数据库 offset。"""
-
-        return (self.page - 1) * self.pageSize
-
-    @property
-    def limit(self) -> int:
-        """将分页大小转换为数据库 limit。"""
-
-        return self.pageSize
-
-
 class QueryRequest(PageParams):
     """用户分页列表查询参数。"""
 
@@ -71,16 +49,3 @@ class QueryRequest(PageParams):
         default=None,
         description="ids 查询",
     )
-
-
-T = TypeVar("T")
-
-
-class PageResult(SQLModel, Generic[T]):
-    """通用分页返回结构。"""
-
-    records: list[T]
-    total: int
-    page: int
-    pageSize: int
-    pages: int

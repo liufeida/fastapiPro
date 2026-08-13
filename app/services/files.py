@@ -8,7 +8,8 @@ from fastapi import HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.files import File, FileCreate, FileOut, PageResult, QueryRequest
+from app.models.common import PageResult
+from app.models.files import File, FileCreate, FileOut, QueryRequest
 from app.repository.files import files_repository
 
 

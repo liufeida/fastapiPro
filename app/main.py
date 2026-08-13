@@ -26,7 +26,7 @@ from app.core.database import lifespan
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import register_middleware_handles
 
-from .api.v1 import api
+from app.api import api
 
 # 导入 AI 服务包，触发 provider 注册副作用（deepseek/ollama 等）
 from app.services import ai as _ai_services  # noqa: F401

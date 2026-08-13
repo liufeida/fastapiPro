@@ -7,7 +7,8 @@ from fastapi.responses import FileResponse
 
 from app.api.dependencies import SessionDeep
 from app.core.exceptions import Execute
-from app.models.files import FileOut, PageResult, QueryRequest
+from app.models.common import PageResult
+from app.models.files import FileOut, QueryRequest
 from app.schemas.exceptions import ResponseModel
 from app.services.files import files_services
 
