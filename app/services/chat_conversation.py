@@ -27,20 +27,18 @@ class ChatConversationService:
 
         Args:
             session: 数据库会话。
-            user_id: 用户 ID。
-            model_code: 模型编码。
-            initial_title: 初始标题，为空时使用默认值 "新对话"。
+            data: 创建入参（title / user_id / model_code）。
 
         Returns:
             创建好的 ChatConversation 对象。
         """
         title = data.title or "新对话"
-        data: dict = {"title": title}
+        create_data = {"title": title}
         if data.user_id is not None:
-            data["user_id"] = data.user_id
+            create_data["user_id"] = data.user_id
         if data.model_code is not None:
-            data["model_code"] = data.model_code
-        _data = await chat_conversation_repository.create(session, data)
+            create_data["model_code"] = data.model_code
+        _data = await chat_conversation_repository.create(session, create_data)
         return ChatConversationReo.model_validate(_data)
 
     async def get_conversation_by_id(self, session: AsyncSession, conv_id: str) -> dict:
@@ -147,9 +145,11 @@ class ChatConversationService:
             auto_title = first_prompt[:10]
         return await self.create_conversation(
             session,
-            user_id=user_id,
-            model_code=model_code,
-            initial_title=auto_title,
+            ChatConversationCreate(
+                title=auto_title,
+                user_id=user_id,
+                model_code=model_code,
+            ),
         )
 
     async def soft_delete_by_id(

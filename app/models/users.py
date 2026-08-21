@@ -30,6 +30,8 @@ class Users(UsersBase, table=True):
         default_factory=lambda: uuid.uuid4().hex, primary_key=True
     )
     hashed_password: str
+    # Google 账号唯一 ID：用于第三方登录时按 sub 优先匹配（Google 账号换邮箱也能识别）
+    google_sub: Optional[str] = Field(default=None, index=True, unique=True)
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True)),
         default_factory=lambda: datetime.now(timezone.utc),

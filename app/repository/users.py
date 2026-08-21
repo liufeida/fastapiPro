@@ -39,6 +39,18 @@ class UsersRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_user_by_google_sub(
+        self, session: AsyncSession, google_sub: str
+    ) -> Users | None:
+        """Find one active user by Google account unique id (sub)."""
+
+        result = await session.execute(
+            select(Users).where(
+                Users.google_sub == google_sub, Users.is_deleted.is_(False)
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def create_user(
         self, session: AsyncSession, data: dict[str, any]
     ) -> Users | None:

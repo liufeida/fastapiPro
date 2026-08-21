@@ -7,7 +7,7 @@ from app.api.dependencies import SessionDeep
 from app.core.exceptions import Execute
 from app.models.users import UsersLoginReo
 from app.schemas.exceptions import ResponseModel
-from app.schemas.users import LoginModel
+from app.schemas.users import GoogleLoginModel, LoginModel
 from app.services.users import users_services
 
 router = APIRouter()
@@ -45,3 +45,20 @@ async def login(
         session, form_data.username, form_data.password
     )
     return Execute.response(login_info)
+
+
+@router.post(
+    "/google",
+    response_model=ResponseModel[UsersLoginReo],
+    summary="Google 账号登录",
+    operation_id="google_login",
+)
+async def google_login(
+    session: SessionDeep,
+    body: Annotated[GoogleLoginModel, Body()],
+):
+    """Google 账号登录：验证 id_token/access_token，按 email 匹配或自动创建用户，签发 JWT。"""
+    data = await users_services.google_login(
+        session, id_token=body.id_token, access_token=body.access_token
+    )
+    return Execute.response(data)
